@@ -790,9 +790,11 @@ async function fetchNWPSStageflowForecast({hours=72}={}){
   const res = await fetch(url, { cache:"no-store" });
   if(!res.ok) throw new Error("NWPS stageflow failed " + res.status);
   const j = await res.json();
+const fc = j?.forecast?.data || j?.forecast || j?.data || [];
 
 const pts = fc.map(p=>{
-  const t = p.validTime || p.time || p.t || p.dateTime || p.datetime;
+  const t0 = p.validTime || p.time || p.t || p.dateTime || p.datetime;
+  const t  = normNWPSTime(t0);
 
   const raw =
     p.primary?.value ??
@@ -805,6 +807,7 @@ const pts = fc.map(p=>{
 
   return { t, ft: Number(raw) };
 }).filter(p=>p.t && Number.isFinite(p.ft));
+
 
 
   const now = Date.now();
@@ -1514,6 +1517,12 @@ async function updateTimeseries(){
   STATE.obs24Navd = obs;
 
   const lastObsTime = obs.length ? obs[obs.length-1].t : null;
+
+  function normNWPSTime(t){
+  if(!t) return null;
+  if(typeof t !== "string") return t;
+  return t.includes("/") ? t.split("/")[0] : t;
+}
 
  try{
 const fc = await fetchNWPSStageflowForecast({hours:72});
