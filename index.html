@@ -291,11 +291,29 @@
         <h2>Observations (USGS) & Predictions (NOAA)</h2>
         <div class="kicker" style="text-transform:none"></div>
       </div>
-      <div class="chartWrapTall"><canvas id="tsChart"></canvas></div>
-      <div class="foot" id="fcNote"></div>
-      <div class="foot" id="txtNote"></div>
-    </div>
-    
+<div class="chartWrapTall">
+  <canvas id="tsChart"></canvas>
+</div>
+
+<div class="foot" id="threshKey">
+  <span class="tag">
+    <span class="chip" style="background:var(--minor)"></span>
+    Minor threshold
+  </span>
+  <span class="tag">
+    <span class="chip" style="background:var(--moderate)"></span>
+    Moderate threshold
+  </span>
+  <span class="tag">
+    <span class="chip" style="background:var(--major)"></span>
+    Major threshold
+  </span>
+</div>
+
+<div class="foot" id="fcNote"></div>
+<div class="foot" id="txtNote"></div>
+
+ 
 <div style="height:14px"></div>
 
        <div class="card">
