@@ -91,17 +91,8 @@
     .hrow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
     .hrow h2{margin:0;font-size:12.5px;letter-spacing:.22px;text-transform:uppercase;color:var(--muted);font-weight:950}
 
-.metrics{
-  display:grid;
-  grid-template-columns:minmax(0, 520px);
-  justify-content:center;
-  gap:10px;
-  margin-top:8px;
-}
-@media(max-width:720px){
-  .metrics{grid-template-columns:1fr}
-}
-
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+    @media(max-width:720px){.metrics{grid-template-columns:1fr}}
     .metric{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:88px}
     .ml{color:var(--muted);font-weight:950;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px;margin-bottom:8px;text-align:center}
     .mv{display:flex;align-items:baseline;justify-content:center;gap:8px;font-weight:950;font-size:28px;letter-spacing:.2px;text-align:center}
@@ -295,31 +286,7 @@
       <div class="foot" id="fcNote"></div>
       <div class="foot" id="txtNote"></div>
     </div>
-    
-<div style="height:14px"></div>
 
-       <div class="card">
-      <div class="hrow"><h2>Average Number of floods per month </h2></div>
-      <div class="hint" id="monthAvgMeta">Computing…</div>
-      <div style="height:10px"></div>
-      <div class="chartWrap"><canvas id="monthAvgChart"></canvas></div>
-      <div style="height:10px"></div>
-      <div class="table">
-        <table aria-label="Average floods by month of year">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th>Avg Total</th>
-              <th>Avg Minor</th>
-              <th>Avg Moderate</th>
-              <th>Avg Major</th>
-            </tr>
-          </thead>
-          <tbody id="monthAvgBody"></tbody>
-        </table>
-      </div>
-    </div> 
-    
     <div style="height:14px"></div>
 
     <div class="card">
@@ -351,6 +318,28 @@
     </div>
 
     <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="hrow"><h2>Average Number of floods per month </h2></div>
+      <div class="hint" id="monthAvgMeta">Computing…</div>
+      <div style="height:10px"></div>
+      <div class="chartWrap"><canvas id="monthAvgChart"></canvas></div>
+      <div style="height:10px"></div>
+      <div class="table">
+        <table aria-label="Average floods by month of year">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Avg Total</th>
+              <th>Avg Minor</th>
+              <th>Avg Moderate</th>
+              <th>Avg Major</th>
+            </tr>
+          </thead>
+          <tbody id="monthAvgBody"></tbody>
+        </table>
+      </div>
+    </div>
 
     <script>
 
@@ -456,28 +445,6 @@ const fmtMonthName = new Intl.DateTimeFormat("en-US",{timeZone:TZ,month:"short"}
 
 function fmtESTFull(iso){ return fmtFull.format(new Date(iso)); }
 function fmtESTDay(iso){ return fmtDay.format(new Date(iso)); }
-function fmtNiceDate(iso){
-  const d = new Date(iso);
-  if(Number.isNaN(d.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  }).formatToParts(d);
-
-  const month = parts.find(p=>p.type==="month")?.value || "";
-  const dayN  = + (parts.find(p=>p.type==="day")?.value || "0");
-  const year  = parts.find(p=>p.type==="year")?.value || "";
-
-  const suffix =
-    (dayN % 100 >= 11 && dayN % 100 <= 13) ? "th" :
-    (dayN % 10 === 1) ? "st" :
-    (dayN % 10 === 2) ? "nd" :
-    (dayN % 10 === 3) ? "rd" : "th";
-
-  return `${month} ${dayN}${suffix} ${year}`;
-}
 
 function getESTParts(date=new Date()){
   const p=fmtPartsYMD.formatToParts(date);
@@ -534,29 +501,6 @@ function updateUnitsAndBadges(){
 function maxPoint(arr){ return arr.reduce((a,b)=>b.ft>a.ft?b:a, arr[0]); }
 function minPoint(arr){ return arr.reduce((a,b)=>b.ft<a.ft?b:a, arr[0]); }
 function setTXTStatus(msg){ if(txtNote) txtNote.textContent = ""; }
-
-function extractHighLowPoints(series){
-  if(!series || series.length < 3) return [];
-
-  const pts = [...series]
-    .map(p=>({ t:p.t, ft:Number(p.ft) }))
-    .filter(p=>p.t && Number.isFinite(p.ft))
-    .sort((a,b)=>new Date(a.t)-new Date(b.t));
-
-  const out = [];
-  for(let i=1;i<pts.length-1;i++){
-    const a = pts[i-1], b = pts[i], c = pts[i+1];
-    if(b.ft > a.ft && b.ft >= c.ft) out.push({ t:b.t, ft:b.ft, kind:"HIGH" });
-    else if(b.ft < a.ft && b.ft <= c.ft) out.push({ t:b.t, ft:b.ft, kind:"LOW" });
-  }
-  return out;
-}
-      function normNWPSTime(t){
-  if(!t) return null;
-  if(typeof t !== "string") return t;
-  return t.includes("/") ? t.split("/")[0] : t;
-}
-
 
 /* Top ten renderer (MLLW list; converts for display + classification) */
 function renderTopTen(){
@@ -764,66 +708,9 @@ function toCOOPSLocalStringGMT(date){
 
   return `${y}${mo}${d} ${hh}:${mm}`;
 }
-  if(!series || series.length < 3) return [];
-
-  const pts = [...series]
-    .map(p=>({ t:p.t, ft:Number(p.ft) }))
-    .filter(p=>p.t && Number.isFinite(p.ft))
-    .sort((a,b)=>new Date(a.t)-new Date(b.t));
-
-  const out = [];
-  for(let i=1;i<pts.length-1;i++){
-    const a = pts[i-1], b = pts[i], c = pts[i+1];
-
-    if(b.ft > a.ft && b.ft >= c.ft) out.push({ t:b.t, ft:b.ft, kind:"HIGH" });
-    else if(b.ft < a.ft && b.ft <= c.ft) out.push({ t:b.t, ft:b.ft, kind:"LOW" });
-  }
-  return out;
-}
-
 function roundUpTo6Min(d){
   const step = 6*60*1000;
   return new Date(Math.ceil(d.getTime()/step)*step);
-}
-
-/* =========================
-NWPS total water level forecast (replaces tidal predictions)
-========================= */
-async function fetchNWPSStageflowForecast({hours=72}={}){
-  const url = `https://api.water.noaa.gov/nwps/v1/gauges/BVVN4/stageflow`;
-  const res = await fetch(url, { cache:"no-store" });
-  if(!res.ok) throw new Error("NWPS stageflow failed " + res.status);
-  const j = await res.json();
-const fc = j?.forecast?.data || j?.forecast || j?.data || [];
-
-const pts = fc.map(p=>{
-  const t0 = p.validTime || p.time || p.t || p.dateTime || p.datetime;
-  const t  = normNWPSTime(t0);
-
-  const raw =
-    p.primary?.value ??
-    p.stage?.value ??
-    p.value?.value ??
-    p.primary ??
-    p.stage ??
-    p.value ??
-    p.v;
-
-  return { t, ft: Number(raw) };
-}).filter(p=>p.t && Number.isFinite(p.ft));
-
-
-
-  const now = Date.now();
-const end = now + hours*3600*1000;
-
-const extrema = extractHighLowPoints(pts);
-
-return extrema.filter(p=>{
-  const tt = new Date(p.t).getTime();
-  return Number.isFinite(tt) && tt <= end;
-});
-
 }
 
 async function fetchCOOPSPredictions_MLLW({beginDateISO=null, hours=72}={}){
@@ -1007,6 +894,7 @@ const floodBandsPlugin = {
 };
 
 Chart.register(floodBandsPlugin);
+/* ========= SCRIPT (Part 3/4) ========= */
 
 /* =========================
 Core state
@@ -1015,8 +903,7 @@ let HIGH_TIDES_NAVD=[];
 let annualChart=null, tsChart=null, monthAvgChart=null;
 let YEARS=[], annualMinor=[], annualModerate=[], annualMajor=[];
 
-const STATE = { lastNavd:null, ytdNavd:null, todayNavd:null, obs24Navd:null, pred72Navd:null };
-
+const STATE = { lastNavd:null, ytdNavd:null, todayNavd:null, obs24Navd:null, pred72Mllw:null };
 
 function sliceAfter(series, startISO){
   const s = new Date(startISO).getTime();
@@ -1203,7 +1090,7 @@ function ensureTsChart(){
           }
         },
         {
-   label:"Forecast (NWPS)",
+          label:"Predicted (NOAA)",
           data:[],
           borderWidth:2,
           pointRadius:0,
@@ -1278,10 +1165,10 @@ function updateTsChartFromState(){
   const predStartISO = obsGrid.labels[obsGrid.labels.length-1] || endISO;
   const predEndISO = new Date(new Date(predStartISO).getTime() + 72*3600*1000).toISOString();
 
-const predGrid = buildFixedGrid15Min_fromAny(STATE.pred72Navd || [], predStartISO, predEndISO);
-let predValsNavd = predGrid.values.map(v => (v===null ? null : v));
-predValsNavd = filterSpikes15Min(predValsNavd, TS_MAX_DELTA_FT);
-const predValsDisplay = predValsNavd.map(v => (v===null ? null : toDisplayFtFromNavd(v)));
+  const predGrid = resampleTo15Min_MLLW(STATE.pred72Mllw || [], predStartISO, predEndISO);
+  let predValsMllw = predGrid.values.map(v => (v===null ? null : v));
+  predValsMllw = filterSpikes15Min(predValsMllw, TS_MAX_DELTA_FT);
+  const predValsDisplay = predValsMllw.map(v => (v===null ? null : toDisplayFtFromMllw(v)));
 
   /* Combine: obs labels + pred labels (pred begins immediately after obs window) */
   const labels = [...obsGrid.labels, ...predGrid.labels];
@@ -1317,7 +1204,7 @@ function renderHist(rowsNavd){
     const label = r.kind ? `${r.kind} · ` : "";
     const tr=document.createElement("tr");
     tr.innerHTML=`
-   <td>${fmtNiceDate(r.t)}</td>
+      <td>${label}${fmtESTFull(r.t)}</td>
       <td><b>${disp.toFixed(2)}</b></td>
       <td><span class="tag"><span class="chip" style="background:${tag.c}"></span>${tag.txt}</span></td>
     `;
@@ -1339,6 +1226,7 @@ function applyFilter(){
 
   renderHist(rows);
 }
+/* ========= SCRIPT (Part 4/4) ========= */
 
 /* =========================
 Monthly averages
@@ -1522,15 +1410,15 @@ async function updateTimeseries(){
 
   const lastObsTime = obs.length ? obs[obs.length-1].t : null;
 
- try{
-const fc = await fetchNWPSStageflowForecast({hours:72});
-STATE.pred72Navd = fc;
-  fcNote.textContent = fc.length ? "" : "NWPS forecast returned no points.";
-}catch(e){
-  STATE.pred72Navd = [];
-  fcNote.textContent = `NWPS forecast unavailable: ${e?.message || String(e)}`;
-}
-
+  try{
+    const beginISO = lastObsTime ? ceilToNext15MinISO(lastObsTime) : new Date().toISOString();
+    const fc = await fetchCOOPSPredictions_MLLW({beginDateISO:beginISO, hours:72});
+    STATE.pred72Mllw = fc;
+    fcNote.textContent = fc.length ? "" : "NOAA predictions returned no points.";
+  }catch(e){
+    STATE.pred72Mllw = [];
+    fcNote.textContent = `NOAA predictions unavailable: ${e?.message || String(e)}`;
+  }
 
   updateTsChartFromState();
 }
