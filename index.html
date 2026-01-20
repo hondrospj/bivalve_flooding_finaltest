@@ -746,6 +746,30 @@ function roundUpTo6Min(d){
   return new Date(Math.ceil(d.getTime()/step)*step);
 }
 
+/* =========================
+NWPS total water level forecast (replaces tidal predictions)
+========================= */
+async function fetchNWPSStageflowForecast({hours=72}={}){
+  const url = `https://api.water.noaa.gov/nwps/v1/gauges/BVVN4/stageflow`;
+  const res = await fetch(url, { cache:"no-store" });
+  if(!res.ok) throw new Error("NWPS stageflow failed " + res.status);
+  const j = await res.json();
+
+  const fc = j?.forecast?.data || j?.forecast || [];
+  const pts = fc.map(p=>{
+    const t = p.validTime || p.time || p.t || p.dateTime || p.datetime;
+    const v = p.primary || p.value || p.stage || p.v;
+    return { t, ft: Number(v) };
+  }).filter(p=>p.t && Number.isFinite(p.ft));
+
+  const now = Date.now();
+  const end = now + hours*3600*1000;
+  return pts.filter(p=>{
+    const tt = new Date(p.t).getTime();
+    return Number.isFinite(tt) && tt <= end;
+  });
+}
+
 async function fetchCOOPSPredictions_MLLW({beginDateISO=null, hours=72}={}){
   const start = beginDateISO ? new Date(beginDateISO) : new Date();
   const begin = roundUpTo6Min(start);
@@ -935,7 +959,8 @@ let HIGH_TIDES_NAVD=[];
 let annualChart=null, tsChart=null, monthAvgChart=null;
 let YEARS=[], annualMinor=[], annualModerate=[], annualMajor=[];
 
-const STATE = { lastNavd:null, ytdNavd:null, todayNavd:null, obs24Navd:null, pred72Mllw:null };
+const STATE = { lastNavd:null, ytdNavd:null, todayNavd:null, obs24Navd:null, pred72Navd:null };
+
 
 function sliceAfter(series, startISO){
   const s = new Date(startISO).getTime();
@@ -1122,7 +1147,7 @@ function ensureTsChart(){
           }
         },
         {
-          label:"Predicted (NOAA)",
+   label:"Forecast (NWPS)",
           data:[],
           borderWidth:2,
           pointRadius:0,
@@ -1197,10 +1222,10 @@ function updateTsChartFromState(){
   const predStartISO = obsGrid.labels[obsGrid.labels.length-1] || endISO;
   const predEndISO = new Date(new Date(predStartISO).getTime() + 72*3600*1000).toISOString();
 
-  const predGrid = resampleTo15Min_MLLW(STATE.pred72Mllw || [], predStartISO, predEndISO);
-  let predValsMllw = predGrid.values.map(v => (v===null ? null : v));
-  predValsMllw = filterSpikes15Min(predValsMllw, TS_MAX_DELTA_FT);
-  const predValsDisplay = predValsMllw.map(v => (v===null ? null : toDisplayFtFromMllw(v)));
+const predGrid = buildFixedGrid15Min_fromAny(STATE.pred72Navd || [], predStartISO, predEndISO);
+let predValsNavd = predGrid.values.map(v => (v===null ? null : v));
+predValsNavd = filterSpikes15Min(predValsNavd, TS_MAX_DELTA_FT);
+const predValsDisplay = predValsNavd.map(v => (v===null ? null : toDisplayFtFromNavd(v)));
 
   /* Combine: obs labels + pred labels (pred begins immediately after obs window) */
   const labels = [...obsGrid.labels, ...predGrid.labels];
@@ -1441,15 +1466,15 @@ async function updateTimeseries(){
 
   const lastObsTime = obs.length ? obs[obs.length-1].t : null;
 
-  try{
-    const beginISO = lastObsTime ? ceilToNext15MinISO(lastObsTime) : new Date().toISOString();
-    const fc = await fetchCOOPSPredictions_MLLW({beginDateISO:beginISO, hours:72});
-    STATE.pred72Mllw = fc;
-    fcNote.textContent = fc.length ? "" : "NOAA predictions returned no points.";
-  }catch(e){
-    STATE.pred72Mllw = [];
-    fcNote.textContent = `NOAA predictions unavailable: ${e?.message || String(e)}`;
-  }
+ try{
+const fc = await fetchNWPSStageflowForecast({hours:72});
+STATE.pred72Navd = fc;
+  fcNote.textContent = fc.length ? "" : "NWPS forecast returned no points.";
+}catch(e){
+  STATE.pred72Navd = [];
+  fcNote.textContent = `NWPS forecast unavailable: ${e?.message || String(e)}`;
+}
+
 
   updateTsChartFromState();
 }
