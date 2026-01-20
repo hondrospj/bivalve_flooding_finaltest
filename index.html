@@ -1295,7 +1295,7 @@ tsChart.options.scales.y.title.text = unitText();
 const {minor, moderate, major} = thresholdsDisplay();
 
 // collect finite y values from plotted series
-const ys = [...obsValsDisplay, ...predValsDisplay].filter(v=>Number.isFinite(v));
+const ys = [...obsValsDisplay, ...predValsDisplay].filter(v => Number.isFinite(v));
 
 // include thresholds
 ys.push(minor, moderate, major);
@@ -1307,8 +1307,15 @@ const pad = Math.max(0.25, (yMax - yMin) * 0.08);
 yMin -= pad;
 yMax += pad;
 
+// round bounds to clean whole-foot ticks
+const STEP = 1.0;
+yMin = Math.floor(yMin / STEP) * STEP;
+yMax = Math.ceil(yMax / STEP) * STEP;
+
 tsChart.options.scales.y.min = yMin;
 tsChart.options.scales.y.max = yMax;
+tsChart.options.scales.y.ticks.stepSize = STEP;
+
 // --------------------------------------------
 
 tsChart.update();
