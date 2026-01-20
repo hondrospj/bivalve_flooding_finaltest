@@ -1639,11 +1639,17 @@ datumBtn.addEventListener("click", ()=>{
     curFtEl.textContent = toDisplayFtFromNavd(STATE.lastNavd.ft).toFixed(2);
     setStage(STATE.lastNavd.ft);
   }
+
   if(STATE.todayNavd && STATE.todayNavd.length){
     const dmx=maxPoint(STATE.todayNavd), dmn=minPoint(STATE.todayNavd);
     dayMaxFtEl.textContent = toDisplayFtFromNavd(dmx.ft).toFixed(2);
     dayMinFtEl.textContent = toDisplayFtFromNavd(dmn.ft).toFixed(2);
+  } else {
+    dayMaxFtEl.textContent = "—";
+    dayMinFtEl.textContent = "—";
   }
+
+  updatePred24RangeCard();
   updateTsChartFromState();
 });
 
