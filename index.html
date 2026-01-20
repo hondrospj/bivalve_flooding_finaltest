@@ -569,6 +569,46 @@ function setTXTStatus(msg){ if(txtNote) txtNote.textContent = ""; }
   const T = THRESH[DISPLAY_DATUM];
   return { minor:T.minorLow, moderate:T.moderateLow, major:T.majorLow };
 }
+function updatePred24RangeCard(){
+  const maxEl = document.getElementById("pred24MaxFt");
+  const minEl = document.getElementById("pred24MinFt");
+  const metaEl = document.getElementById("pred24Meta");
+  if(!maxEl || !minEl || !metaEl) return;
+
+  const pred = STATE.pred72Mllw || [];
+  if(!pred.length){
+    maxEl.textContent = "—";
+    minEl.textContent = "—";
+    metaEl.textContent = "NOAA predictions unavailable";
+    return;
+  }
+
+  const t0 = new Date(pred[0].t).getTime();
+  const t1 = t0 + 24*3600*1000;
+
+  const window = pred
+    .map(p => ({ t:new Date(p.t).getTime(), ft:p.ft }))
+    .filter(p => Number.isFinite(p.t) && Number.isFinite(p.ft) && p.t >= t0 && p.t <= t1);
+
+  if(!window.length){
+    maxEl.textContent = "—";
+    minEl.textContent = "—";
+    metaEl.textContent = "NOAA predictions empty (24h)";
+    return;
+  }
+
+  let max = -Infinity, min = Infinity;
+  for(const p of window){
+    if(p.ft > max) max = p.ft;
+    if(p.ft < min) min = p.ft;
+  }
+
+  maxEl.textContent = toDisplayFtFromMllw(max).toFixed(2);
+  minEl.textContent = toDisplayFtFromMllw(min).toFixed(2);
+
+  metaEl.textContent =
+    `Next 24h starting ${fmtESTFull(new Date(t0).toISOString())}`;
+}
 
 
 /* Top ten renderer (MLLW list; converts for display + classification) */
@@ -1499,17 +1539,28 @@ async function updateTimeseries(){
 
   const lastObsTime = obs.length ? obs[obs.length-1].t : null;
 
-  try{
-    const beginISO = lastObsTime ? ceilToNext15MinISO(lastObsTime) : new Date().toISOString();
-    const fc = await fetchCOOPSPredictions_MLLW({beginDateISO:beginISO, hours:72});
-    STATE.pred72Mllw = fc;
-    fcNote.textContent = fc.length ? "" : "NOAA predictions returned no points.";
-  }catch(e){
-    STATE.pred72Mllw = [];
-    fcNote.textContent = `NOAA predictions unavailable: ${e?.message || String(e)}`;
-  }
+try {
+  const beginISO = lastObsTime
+    ? ceilToNext15MinISO(lastObsTime)
+    : new Date().toISOString();
 
-  updateTsChartFromState();
+  const fc = await fetchCOOPSPredictions_MLLW({
+    beginDateISO: beginISO,
+    hours: 72
+  });
+
+  STATE.pred72Mllw = fc;
+  fcNote.textContent = fc.length ? "" : "NOAA predictions returned no points.";
+
+} catch (e) {
+  console.error("NOAA predictions failed:", e);
+  STATE.pred72Mllw = [];
+  fcNote.textContent = "NOAA predictions unavailable";
+}
+
+updatePred24RangeCard();
+updateTsChartFromState();
+
 }
 
 /* =========================
