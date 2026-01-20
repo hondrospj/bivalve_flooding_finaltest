@@ -531,7 +531,6 @@ function updateUnitsAndBadges(){
 }
 
 /* Simple helpers */
-/* Simple helpers */
 function maxPoint(arr){ return arr.reduce((a,b)=>b.ft>a.ft?b:a, arr[0]); }
 function minPoint(arr){ return arr.reduce((a,b)=>b.ft<a.ft?b:a, arr[0]); }
 function setTXTStatus(msg){ if(txtNote) txtNote.textContent = ""; }
@@ -552,6 +551,12 @@ function extractHighLowPoints(series){
   }
   return out;
 }
+      function normNWPSTime(t){
+  if(!t) return null;
+  if(typeof t !== "string") return t;
+  return t.includes("/") ? t.split("/")[0] : t;
+}
+
 
 /* Top ten renderer (MLLW list; converts for display + classification) */
 function renderTopTen(){
@@ -759,7 +764,6 @@ function toCOOPSLocalStringGMT(date){
 
   return `${y}${mo}${d} ${hh}:${mm}`;
 }
-      function extractHighLowPoints(series){
   if(!series || series.length < 3) return [];
 
   const pts = [...series]
@@ -1517,12 +1521,6 @@ async function updateTimeseries(){
   STATE.obs24Navd = obs;
 
   const lastObsTime = obs.length ? obs[obs.length-1].t : null;
-
-  function normNWPSTime(t){
-  if(!t) return null;
-  if(typeof t !== "string") return t;
-  return t.includes("/") ? t.split("/")[0] : t;
-}
 
  try{
 const fc = await fetchNWPSStageflowForecast({hours:72});
