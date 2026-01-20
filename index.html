@@ -91,8 +91,17 @@
     .hrow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
     .hrow h2{margin:0;font-size:12.5px;letter-spacing:.22px;text-transform:uppercase;color:var(--muted);font-weight:950}
 
-    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
-    @media(max-width:720px){.metrics{grid-template-columns:1fr}}
+.metrics{
+  display:grid;
+  grid-template-columns:minmax(0, 520px);
+  justify-content:center;
+  gap:10px;
+  margin-top:8px;
+}
+@media(max-width:720px){
+  .metrics{grid-template-columns:1fr}
+}
+
     .metric{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:88px}
     .ml{color:var(--muted);font-weight:950;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px;margin-bottom:8px;text-align:center}
     .mv{display:flex;align-items:baseline;justify-content:center;gap:8px;font-weight:950;font-size:28px;letter-spacing:.2px;text-align:center}
@@ -286,7 +295,31 @@
       <div class="foot" id="fcNote"></div>
       <div class="foot" id="txtNote"></div>
     </div>
+    
+<div style="height:14px"></div>
 
+       <div class="card">
+      <div class="hrow"><h2>Average Number of floods per month </h2></div>
+      <div class="hint" id="monthAvgMeta">Computing…</div>
+      <div style="height:10px"></div>
+      <div class="chartWrap"><canvas id="monthAvgChart"></canvas></div>
+      <div style="height:10px"></div>
+      <div class="table">
+        <table aria-label="Average floods by month of year">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Avg Total</th>
+              <th>Avg Minor</th>
+              <th>Avg Moderate</th>
+              <th>Avg Major</th>
+            </tr>
+          </thead>
+          <tbody id="monthAvgBody"></tbody>
+        </table>
+      </div>
+    </div> 
+    
     <div style="height:14px"></div>
 
     <div class="card">
@@ -318,28 +351,6 @@
     </div>
 
     <div style="height:14px"></div>
-
-    <div class="card">
-      <div class="hrow"><h2>Average Number of floods per month </h2></div>
-      <div class="hint" id="monthAvgMeta">Computing…</div>
-      <div style="height:10px"></div>
-      <div class="chartWrap"><canvas id="monthAvgChart"></canvas></div>
-      <div style="height:10px"></div>
-      <div class="table">
-        <table aria-label="Average floods by month of year">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th>Avg Total</th>
-              <th>Avg Minor</th>
-              <th>Avg Moderate</th>
-              <th>Avg Major</th>
-            </tr>
-          </thead>
-          <tbody id="monthAvgBody"></tbody>
-        </table>
-      </div>
-    </div>
 
     <script>
 
@@ -445,6 +456,28 @@ const fmtMonthName = new Intl.DateTimeFormat("en-US",{timeZone:TZ,month:"short"}
 
 function fmtESTFull(iso){ return fmtFull.format(new Date(iso)); }
 function fmtESTDay(iso){ return fmtDay.format(new Date(iso)); }
+function fmtNiceDate(iso){
+  const d = new Date(iso);
+  if(Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  }).formatToParts(d);
+
+  const month = parts.find(p=>p.type==="month")?.value || "";
+  const dayN  = + (parts.find(p=>p.type==="day")?.value || "0");
+  const year  = parts.find(p=>p.type==="year")?.value || "";
+
+  const suffix =
+    (dayN % 100 >= 11 && dayN % 100 <= 13) ? "th" :
+    (dayN % 10 === 1) ? "st" :
+    (dayN % 10 === 2) ? "nd" :
+    (dayN % 10 === 3) ? "rd" : "th";
+
+  return `${month} ${dayN}${suffix} ${year}`;
+}
 
 function getESTParts(date=new Date()){
   const p=fmtPartsYMD.formatToParts(date);
@@ -894,7 +927,6 @@ const floodBandsPlugin = {
 };
 
 Chart.register(floodBandsPlugin);
-/* ========= SCRIPT (Part 3/4) ========= */
 
 /* =========================
 Core state
@@ -1204,7 +1236,7 @@ function renderHist(rowsNavd){
     const label = r.kind ? `${r.kind} · ` : "";
     const tr=document.createElement("tr");
     tr.innerHTML=`
-      <td>${label}${fmtESTFull(r.t)}</td>
+   <td>${fmtNiceDate(r.t)}</td>
       <td><b>${disp.toFixed(2)}</b></td>
       <td><span class="tag"><span class="chip" style="background:${tag.c}"></span>${tag.txt}</span></td>
     `;
@@ -1226,7 +1258,6 @@ function applyFilter(){
 
   renderHist(rows);
 }
-/* ========= SCRIPT (Part 4/4) ========= */
 
 /* =========================
 Monthly averages
