@@ -534,6 +534,11 @@ function updateUnitsAndBadges(){
 function maxPoint(arr){ return arr.reduce((a,b)=>b.ft>a.ft?b:a, arr[0]); }
 function minPoint(arr){ return arr.reduce((a,b)=>b.ft<a.ft?b:a, arr[0]); }
 function setTXTStatus(msg){ if(txtNote) txtNote.textContent = ""; }
+      function thresholdsDisplay(){
+  const T = THRESH[DISPLAY_DATUM];
+  return { minor:T.minorLow, moderate:T.moderateLow, major:T.majorLow };
+}
+
 
 /* Top ten renderer (MLLW list; converts for display + classification) */
 function renderTopTen(){
@@ -1208,13 +1213,35 @@ function updateTsChartFromState(){
   const predData = [...Array(obsGrid.labels.length).fill(null), ...predValsDisplay];
 
   ensureTsChart();
-  tsChart.data.labels = labels;
-  tsChart.data.datasets[0].data = obsData;
-  tsChart.data.datasets[1].data = predData;
+tsChart.data.labels = labels;
+tsChart.data.datasets[0].data = obsData;
+tsChart.data.datasets[1].data = predData;
 
-  tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
-  tsChart.options.scales.y.title.text = unitText();
-  tsChart.update();
+tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
+tsChart.options.scales.y.title.text = unitText();
+
+// ---- HARD SCALE Y TO INCLUDE THRESHOLDS ----
+const {minor, moderate, major} = thresholdsDisplay();
+
+// collect finite y values from plotted series
+const ys = [...obsValsDisplay, ...predValsDisplay].filter(v=>Number.isFinite(v));
+
+// include thresholds
+ys.push(minor, moderate, major);
+
+// compute min/max + padding
+let yMin = Math.min(...ys);
+let yMax = Math.max(...ys);
+const pad = Math.max(0.25, (yMax - yMin) * 0.08);
+yMin -= pad;
+yMax += pad;
+
+tsChart.options.scales.y.min = yMin;
+tsChart.options.scales.y.max = yMax;
+// --------------------------------------------
+
+tsChart.update();
+
 }
 
 /* =========================
