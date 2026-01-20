@@ -456,6 +456,28 @@ const fmtMonthName = new Intl.DateTimeFormat("en-US",{timeZone:TZ,month:"short"}
 
 function fmtESTFull(iso){ return fmtFull.format(new Date(iso)); }
 function fmtESTDay(iso){ return fmtDay.format(new Date(iso)); }
+function fmtNiceDate(iso){
+  const d = new Date(iso);
+  if(Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  }).formatToParts(d);
+
+  const month = parts.find(p=>p.type==="month")?.value || "";
+  const dayN  = + (parts.find(p=>p.type==="day")?.value || "0");
+  const year  = parts.find(p=>p.type==="year")?.value || "";
+
+  const suffix =
+    (dayN % 100 >= 11 && dayN % 100 <= 13) ? "th" :
+    (dayN % 10 === 1) ? "st" :
+    (dayN % 10 === 2) ? "nd" :
+    (dayN % 10 === 3) ? "rd" : "th";
+
+  return `${month} ${dayN}${suffix} ${year}`;
+}
 
 function getESTParts(date=new Date()){
   const p=fmtPartsYMD.formatToParts(date);
@@ -1214,7 +1236,7 @@ function renderHist(rowsNavd){
     const label = r.kind ? `${r.kind} · ` : "";
     const tr=document.createElement("tr");
     tr.innerHTML=`
-      <td>${label}${fmtESTFull(r.t)}</td>
+   <td>${fmtNiceDate(r.t)}</td>
       <td><b>${disp.toFixed(2)}</b></td>
       <td><span class="tag"><span class="chip" style="background:${tag.c}"></span>${tag.txt}</span></td>
     `;
