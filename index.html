@@ -531,9 +531,27 @@ function updateUnitsAndBadges(){
 }
 
 /* Simple helpers */
+/* Simple helpers */
 function maxPoint(arr){ return arr.reduce((a,b)=>b.ft>a.ft?b:a, arr[0]); }
 function minPoint(arr){ return arr.reduce((a,b)=>b.ft<a.ft?b:a, arr[0]); }
 function setTXTStatus(msg){ if(txtNote) txtNote.textContent = ""; }
+
+function extractHighLowPoints(series){
+  if(!series || series.length < 3) return [];
+
+  const pts = [...series]
+    .map(p=>({ t:p.t, ft:Number(p.ft) }))
+    .filter(p=>p.t && Number.isFinite(p.ft))
+    .sort((a,b)=>new Date(a.t)-new Date(b.t));
+
+  const out = [];
+  for(let i=1;i<pts.length-1;i++){
+    const a = pts[i-1], b = pts[i], c = pts[i+1];
+    if(b.ft > a.ft && b.ft >= c.ft) out.push({ t:b.t, ft:b.ft, kind:"HIGH" });
+    else if(b.ft < a.ft && b.ft <= c.ft) out.push({ t:b.t, ft:b.ft, kind:"LOW" });
+  }
+  return out;
+}
 
 /* Top ten renderer (MLLW list; converts for display + classification) */
 function renderTopTen(){
@@ -741,6 +759,24 @@ function toCOOPSLocalStringGMT(date){
 
   return `${y}${mo}${d} ${hh}:${mm}`;
 }
+      function extractHighLowPoints(series){
+  if(!series || series.length < 3) return [];
+
+  const pts = [...series]
+    .map(p=>({ t:p.t, ft:Number(p.ft) }))
+    .filter(p=>p.t && Number.isFinite(p.ft))
+    .sort((a,b)=>new Date(a.t)-new Date(b.t));
+
+  const out = [];
+  for(let i=1;i<pts.length-1;i++){
+    const a = pts[i-1], b = pts[i], c = pts[i+1];
+
+    if(b.ft > a.ft && b.ft >= c.ft) out.push({ t:b.t, ft:b.ft, kind:"HIGH" });
+    else if(b.ft < a.ft && b.ft <= c.ft) out.push({ t:b.t, ft:b.ft, kind:"LOW" });
+  }
+  return out;
+}
+
 function roundUpTo6Min(d){
   const step = 6*60*1000;
   return new Date(Math.ceil(d.getTime()/step)*step);
@@ -755,19 +791,32 @@ async function fetchNWPSStageflowForecast({hours=72}={}){
   if(!res.ok) throw new Error("NWPS stageflow failed " + res.status);
   const j = await res.json();
 
-  const fc = j?.forecast?.data || j?.forecast || [];
-  const pts = fc.map(p=>{
-    const t = p.validTime || p.time || p.t || p.dateTime || p.datetime;
-    const v = p.primary || p.value || p.stage || p.v;
-    return { t, ft: Number(v) };
-  }).filter(p=>p.t && Number.isFinite(p.ft));
+const pts = fc.map(p=>{
+  const t = p.validTime || p.time || p.t || p.dateTime || p.datetime;
+
+  const raw =
+    p.primary?.value ??
+    p.stage?.value ??
+    p.value?.value ??
+    p.primary ??
+    p.stage ??
+    p.value ??
+    p.v;
+
+  return { t, ft: Number(raw) };
+}).filter(p=>p.t && Number.isFinite(p.ft));
+
 
   const now = Date.now();
-  const end = now + hours*3600*1000;
-  return pts.filter(p=>{
-    const tt = new Date(p.t).getTime();
-    return Number.isFinite(tt) && tt <= end;
-  });
+const end = now + hours*3600*1000;
+
+const extrema = extractHighLowPoints(pts);
+
+return extrema.filter(p=>{
+  const tt = new Date(p.t).getTime();
+  return Number.isFinite(tt) && tt <= end;
+});
+
 }
 
 async function fetchCOOPSPredictions_MLLW({beginDateISO=null, hours=72}={}){
