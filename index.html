@@ -800,55 +800,60 @@ async function fetchObservedSeries({startISO=null,endISO=null,period=null}={}){
 }
 
 /* =========================
-NOAA CO-OPS predictions (6-min) -> we resample to 15-min later
+NOAA/NWS NWPS official forecast (BVVN4) -> we resample to 15-min later
+Replaces CO-OPS predictions block.
+Returns MLLW ft as [{t: ISO8601, ft: Number}] plus issuedTime for UI.
 ========================= */
-function toCOOPSLocalStringGMT(date){
-  const parts = new Intl.DateTimeFormat("en-US",{
-    timeZone:"UTC",
-    year:"numeric",month:"2-digit",day:"2-digit",
-    hour:"2-digit",minute:"2-digit",
-    hour12:false
-  }).formatToParts(date);
+const NWPS_GAUGE = "BVVN4";
+const NWPS_STAGEFLOW_URL = `https://api.water.noaa.gov/nwps/v1/gauges/${NWPS_GAUGE}/stageflow`;
 
-  const y  = parts.find(p=>p.type==="year")?.value;
-  const mo = parts.find(p=>p.type==="month")?.value;
-  const d  = parts.find(p=>p.type==="day")?.value;
-  const hh = parts.find(p=>p.type==="hour")?.value;
-  const mm = parts.find(p=>p.type==="minute")?.value;
-
-  return `${y}${mo}${d} ${hh}:${mm}`;
-}
-function roundUpTo6Min(d){
-  const step = 6*60*1000;
-  return new Date(Math.ceil(d.getTime()/step)*step);
+/* Clip to N hours from the first point (keeps your existing 72h logic consistent). */
+function clipHoursFromFirst(points, hours){
+  if(!hours || !points?.length) return points || [];
+  const t0 = new Date(points[0].t).getTime();
+  if(!Number.isFinite(t0)) return points || [];
+  const t1 = t0 + hours*3600*1000;
+  return points.filter(p => {
+    const tt = new Date(p.t).getTime();
+    return Number.isFinite(tt) && tt <= t1;
+  });
 }
 
-async function fetchCOOPSPredictions_MLLW({beginDateISO=null, hours=72}={}){
-  const start = beginDateISO ? new Date(beginDateISO) : new Date();
-  const begin = roundUpTo6Min(start);
-  const end = new Date(begin.getTime()+hours*3600*1000);
+/* Best-effort extraction across common NWPS response shapes. */
+function extractNWPSForecastSeries(json){
+  // Your sample shows top-level json.data[]
+  if(Array.isArray(json?.data) && json.data.length) return json.data;
 
-  const url=new URL("https://api.tidesandcurrents.noaa.gov/api/prod/datagetter");
-  url.searchParams.set("product","predictions");
-  url.searchParams.set("application",COOPS_APP);
-  url.searchParams.set("station",COOPS_STATION);
-  url.searchParams.set("datum",COOPS_DATUM);
-  url.searchParams.set("time_zone",COOPS_TZ);
-  url.searchParams.set("units","english");
-  url.searchParams.set("interval",COOPS_INTERVAL);
-  url.searchParams.set("format","json");
-  url.searchParams.set("begin_date",toCOOPSLocalStringGMT(begin));
-  url.searchParams.set("end_date",toCOOPSLocalStringGMT(end));
+  // Some NWPS responses include nested forecast series
+  if(Array.isArray(json?.forecast?.timeSeries) && json.forecast.timeSeries.length){
+    const d = json.forecast.timeSeries[0]?.data;
+    if(Array.isArray(d) && d.length) return d;
+  }
+  if(Array.isArray(json?.forecast?.data) && json.forecast.data.length) return json.forecast.data;
 
-  const res=await fetch(url.toString(),{cache:"no-store"});
-  if(!res.ok) throw new Error("COOPS predictions failed "+res.status);
-  const j=await res.json();
-  if(j?.error) throw new Error(j.error?.message || "NOAA error");
-
-  const arr=j?.predictions||[];
-  return arr.map(p=>({ t: p.t.replace(" ","T")+":00Z", ft:+p.v }))
-            .filter(p=>Number.isFinite(p.ft) && p.t);
+  return [];
 }
+
+async function fetchNWPSpredictions_MLLW({ hours = 72 } = {}){
+  const res = await fetch(NWPS_STAGEFLOW_URL, { cache: "no-store" });
+  if(!res.ok) throw new Error("NWPS stageflow failed " + res.status);
+
+  const j = await res.json();
+
+  const issuedTime = j.issuedTime || j.issued_time || null;
+  const raw = extractNWPSForecastSeries(j);
+
+  const pts = raw
+    .map(d => ({
+      t: d.validTime || d.valid_time,
+      ft: Number(d.primary)
+    }))
+    .filter(p => p.t && Number.isFinite(p.ft))
+    .sort((a,b)=> new Date(a.t) - new Date(b.t));
+
+  return { issuedTime, points: clipHoursFromFirst(pts, hours) };
+}
+
 
 /* =========================
 Alerts
@@ -1541,21 +1546,29 @@ Timeseries update (observed + predictions)
 async function updateTimeseries(){
   const end = new Date();
   const start = new Date(end.getTime() - 24*3600*1000);
-
-  const obs = await fetchObservedSeries({startISO:start.toISOString(), endISO:end.toISOString()});
-  STATE.obs24Navd = obs;
-
-  const lastObsTime = obs.length ? obs[obs.length-1].t : null;
+const obs = await fetchObservedSeries({
+  startISO: start.toISOString(),
+  endISO: end.toISOString()
+});
+STATE.obs24Navd = obs;
 
 try {
-  const beginISO = lastObsTime
-    ? ceilToNext15MinISO(lastObsTime)
-    : new Date().toISOString();
+  const { issuedTime, points } = await fetchNWPSpredictions_MLLW({ hours: 72 });
 
-  const fc = await fetchCOOPSPredictions_MLLW({
-    beginDateISO: beginISO,
-    hours: 72
-  });
+  STATE.pred72Mllw = points;
+
+  fcNote.textContent = points.length
+    ? (issuedTime
+        ? `NOAA/NWPS official forecast issued: ${fmtESTFull(issuedTime)}`
+        : "")
+    : "NOAA/NWPS forecast returned no points.";
+
+} catch (e) {
+  console.error("NWPS forecast failed:", e);
+  STATE.pred72Mllw = [];
+  fcNote.textContent = "NOAA/NWPS forecast unavailable";
+}
+
 
   STATE.pred72Mllw = fc;
   fcNote.textContent = fc.length ? "" : "NOAA predictions returned no points.";
