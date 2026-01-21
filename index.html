@@ -1546,43 +1546,32 @@ Timeseries update (observed + predictions)
 async function updateTimeseries(){
   const end = new Date();
   const start = new Date(end.getTime() - 24*3600*1000);
-const obs = await fetchObservedSeries({
-  startISO: start.toISOString(),
-  endISO: end.toISOString()
-});
-STATE.obs24Navd = obs;
 
-try {
-  const { issuedTime, points } = await fetchNWPSpredictions_MLLW({ hours: 72 });
+  // Observed: last 24h (NAVD88)
+  const obs = await fetchObservedSeries({
+    startISO: start.toISOString(),
+    endISO: end.toISOString()
+  });
+  STATE.obs24Navd = obs;
 
-  STATE.pred72Mllw = points;
+  // Forecast: NWPS official (MLLW)
+  try {
+    const { issuedTime, points } = await fetchNWPSpredictions_MLLW({ hours: 72 });
+    STATE.pred72Mllw = points;
 
-  fcNote.textContent = points.length
-    ? (issuedTime
-        ? `NOAA/NWPS official forecast issued: ${fmtESTFull(issuedTime)}`
-        : "")
-    : "NOAA/NWPS forecast returned no points.";
+    fcNote.textContent = points.length
+      ? (issuedTime ? `NOAA/NWPS official forecast issued: ${fmtESTFull(issuedTime)}` : "")
+      : "NOAA/NWPS forecast returned no points.";
+  } catch (e) {
+    console.error("NWPS forecast failed:", e);
+    STATE.pred72Mllw = [];
+    fcNote.textContent = "NOAA/NWPS forecast unavailable";
+  }
 
-} catch (e) {
-  console.error("NWPS forecast failed:", e);
-  STATE.pred72Mllw = [];
-  fcNote.textContent = "NOAA/NWPS forecast unavailable";
+  updatePred24RangeCard();
+  updateTsChartFromState();
 }
 
-
-  STATE.pred72Mllw = fc;
-  fcNote.textContent = fc.length ? "" : "NOAA predictions returned no points.";
-
-} catch (e) {
-  console.error("NOAA predictions failed:", e);
-  STATE.pred72Mllw = [];
-  fcNote.textContent = "NOAA predictions unavailable";
-}
-
-updatePred24RangeCard();
-updateTsChartFromState();
-
-}
 
 /* =========================
 Init TXT-backed history
