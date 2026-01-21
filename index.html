@@ -929,34 +929,75 @@ function filterSpikes15Min(values, maxDeltaFt=TS_MAX_DELTA_FT){
   return out;
 }
 
-/* Resample 6-min predictions to 15-min grid by nearest neighbor within +/-7.5 min */
-function resampleTo15Min_MLLW(pred6min, startISO, endISO){
+/* Resample predictions to 15-min grid via linear interpolation
+   (required for hourly / irregular NWPS forecasts) */
+function resampleTo15Min_MLLW(predSeries, startISO, endISO){
   const start = new Date(startISO).getTime();
-  const end = new Date(endISO).getTime();
+  const end   = new Date(endISO).getTime();
 
-  const pts = (pred6min||[])
-    .map(p=>({t:new Date(p.t).getTime(), ft:p.ft}))
-    .filter(p=>Number.isFinite(p.t) && Number.isFinite(p.ft))
-    .sort((a,b)=>a.t-b.t);
+  const pts = (predSeries || [])
+    .map(p => ({
+      t: new Date(p.t).getTime(),
+      ft: Number(p.ft)
+    }))
+    .filter(p => Number.isFinite(p.t) && Number.isFinite(p.ft))
+    .sort((a,b) => a.t - b.t);
 
-  const labels=[], values=[];
-  const s0 = Math.floor(start/TS_STEP_MS)*TS_STEP_MS;
-  const e0 = Math.ceil(end/TS_STEP_MS)*TS_STEP_MS;
+  const labels = [];
+  const values = [];
 
-  let j=0;
-  for(let t=s0; t<=e0; t+=TS_STEP_MS){
+  const s0 = Math.floor(start / TS_STEP_MS) * TS_STEP_MS;
+  const e0 = Math.ceil(end   / TS_STEP_MS) * TS_STEP_MS;
+
+  if(!pts.length){
+    for(let t = s0; t <= e0; t += TS_STEP_MS){
+      labels.push(new Date(t).toISOString());
+      values.push(null);
+    }
+    return { labels, values };
+  }
+
+  const MAX_BRACKET_GAP_MS = 3 * 3600 * 1000; // do not interpolate across large gaps
+  let i = 0;
+
+  for(let t = s0; t <= e0; t += TS_STEP_MS){
     labels.push(new Date(t).toISOString());
 
-    while(j<pts.length && pts[j].t < t-TS_STEP_MS) j++;
+    while(i < pts.length && pts[i].t < t) i++;
 
-    let best=null;
-    for(let k=Math.max(0,j-3); k<pts.length && k<j+4; k++){
-      const dt = Math.abs(pts[k].t - t);
-      if(best===null || dt < best.dt) best = {dt, ft:pts[k].ft};
+    if(i === 0){
+      values.push(Math.abs(pts[0].t - t) <= TS_STEP_MS ? pts[0].ft : null);
+      continue;
     }
-    values.push(best && best.dt <= (TS_STEP_MS/2) ? best.ft : null);
+
+    if(i >= pts.length){
+      values.push(
+        Math.abs(pts[pts.length - 1].t - t) <= TS_STEP_MS
+          ? pts[pts.length - 1].ft
+          : null
+      );
+      continue;
+    }
+
+    const p0 = pts[i - 1];
+    const p1 = pts[i];
+    const gap = p1.t - p0.t;
+
+    if(gap <= 0 || gap > MAX_BRACKET_GAP_MS){
+      values.push(null);
+      continue;
+    }
+
+    if(t < p0.t || t > p1.t){
+      values.push(null);
+      continue;
+    }
+
+    const f = (t - p0.t) / gap;
+    values.push(p0.ft + f * (p1.ft - p0.ft));
   }
-  return {labels, values};
+
+  return { labels, values };
 }
 
 /* =========================
@@ -1276,7 +1317,7 @@ function updateTsChartFromState(){
   const obsValsDisplay = obsValsNavd.map(v => (v===null ? null : toDisplayFtFromNavd(v)));
 
   /* Predictions: 6-min -> 15-min grid (MLLW), then convert to display */
-  const predStartISO = obsGrid.labels[obsGrid.labels.length-1] || endISO;
+ const predStartISO = ceilToNext15MinISO(obsGrid.labels[obsGrid.labels.length-1] || endISO);
   const predEndISO = new Date(new Date(predStartISO).getTime() + 72*3600*1000).toISOString();
 
   const predGrid = resampleTo15Min_MLLW(STATE.pred72Mllw || [], predStartISO, predEndISO);
