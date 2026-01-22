@@ -701,17 +701,19 @@ async function tryFetchText(url){
 }
 
 async function resolveDailyTidesTXTUrl(){
-  const failures=[];
+  const failures = [];
   for(const candidate of TXT_PATH_CANDIDATES){
     const r = await tryFetchText(candidate);
     if(r.ok){
       DAILY_TIDES_TXT_URL = candidate;
-      setTXTStatus(`TXT OK: loaded ${candidate}`);
-      return {url:candidate, text:r.text};
+      // suppress TXT OK message in UI
+      // setTXTStatus(`TXT OK: loaded ${candidate}`);
+      return { url: candidate, text: r.text };
     }else{
-      failures.push(`${candidate} (${r.status}${r.err?`: ${r.err}`:""})`);
+      failures.push(`${candidate} (${r.status}${r.err ? `: ${r.err}` : ""})`);
     }
   }
+  // still show real errors
   setTXTStatus("TXT ERROR: could not load daily tides file. Tried: " + failures.join(" · "));
   throw new Error("TXT not found. Tried: " + failures.join(" | "));
 }
