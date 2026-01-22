@@ -9,6 +9,52 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
+    /* =========================
+DATUM TOGGLE (NAVD88 / MLLW)
+========================= */
+.topRight{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+@media (max-width:760px){
+  .topRight{
+    justify-content:center;
+    width:100%;
+  }
+}
+
+.datumToggle{
+  display:flex;
+  border:1px solid var(--line);
+  border-radius:999px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  background:rgba(0,0,0,.25);
+}
+
+.datumBtn{
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  font-weight:950;
+  padding:10px 16px;
+  cursor:pointer;
+  font-size:13px;
+}
+
+.datumBtn.active{
+  background:linear-gradient(180deg, rgba(45,212,191,.35), rgba(45,212,191,.15));
+  color:var(--text);
+}
+
+.datumBtn:hover{
+  filter:brightness(1.1);
+}
+
 /* =========================
 MOBILE HEADER: fix cutoff + center everything
 ========================= */
@@ -263,15 +309,21 @@ MOBILE HEADER: fix cutoff + center everything
         </div>
       </a>
 
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap">
-        <button class="btn" id="datumBtn" title="Flip between MLLW and NAVD88">Datum: MLLW</button>
-        <div class="pill" id="lastPill">Last updated: —</div>
-        <div class="pill" id="stagePill">
-          <span class="dot" id="stageDot"></span>
-          <span id="stageText">Loading…</span>
-        </div>
-      </div>
-    </div>
+      <div class="topRight">
+  <div class="datumToggle" id="datumToggle" title="Switch vertical datum">
+    <button type="button" class="datumBtn" data-datum="NAVD88">NAVD88</button>
+    <button type="button" class="datumBtn" data-datum="MLLW">MLLW</button>
+  </div>
+
+  <div class="pill" id="lastPill">Last updated: —</div>
+
+  <div class="pill" id="stagePill">
+    <span class="dot" id="stageDot"></span>
+    <span id="stageText">Loading…</span>
+  </div>
+</div>
+</div>
+
 
     <!-- 1) Live Conditions -->
     <div class="card">
@@ -551,37 +603,58 @@ const TOP_TEN_MLLW = [
 ];
 
 /* DOM */
-const $=id=>document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
-const curFtEl=$("curFt"), curMetaEl=$("curMeta");
-const dayMaxFtEl=$("dayMaxFt"), dayMinFtEl=$("dayMinFt"), dayRangeMeta=$("dayRangeMeta");
-const stageTextEl=$("stageText"), stageDotEl=$("stageDot");
-const lastPill=$("lastPill");
-const alertBanner=$("alertBanner"), alertTitle=$("alertTitle"), alertBody=$("alertBody");
+// Live cards
+const curFtEl = $("curFt");
+const curMetaEl = $("curMeta");
 
-const topTenBody=$("topTenBody");
-const topTenUnitTh=$("topTenUnitTh");
-const fcNote=$("fcNote");
-const txtNote=$("txtNote");
+const dayMaxFtEl = $("dayMaxFt");
+const dayMinFtEl = $("dayMinFt");
+const dayRangeMeta = $("dayRangeMeta");
 
-const histBody = $("histBody"),
-      histMeta = $("histMeta"),
-      histUnitTh = $("histUnitTh");
+// Header pills
+const lastPill = $("lastPill");
+const stageTextEl = $("stageText");
+const stageDotEl = $("stageDot");
 
-const minElevEl  = $("minElev"),
-      maxElevEl  = $("maxElev"),
-      fromDateEl = $("fromDate"),
-      toDateEl   = $("toDate"),
-      sortModeEl = $("sortMode");
+// Datum toggle (NEW: supports 1 or many buttons with class="datumBtn")
+const datumButtons = document.querySelectorAll(".datumBtn");
 
-const minorBadge = $("minorBadge"),
-      moderateBadge = $("moderateBadge"),
-      majorBadge = $("majorBadge");
+// Alerts
+const alertBanner = $("alertBanner");
+const alertTitle = $("alertTitle");
+const alertBody = $("alertBody");
 
-const datumBtn = $("datumBtn");
+// Top ten
+const topTenBody = $("topTenBody");
+const topTenUnitTh = $("topTenUnitTh");
 
+// Notes
+const fcNote = $("fcNote");
+const txtNote = $("txtNote");
 
-const monthAvgMeta=$("monthAvgMeta"), monthAvgBody=$("monthAvgBody");
+// Historic filter table
+const histBody = $("histBody");
+const histMeta = $("histMeta");
+const histUnitTh = $("histUnitTh");
+
+// Filter inputs
+const minElevEl = $("minElev");
+const maxElevEl = $("maxElev");
+const fromDateEl = $("fromDate");
+const toDateEl = $("toDate");
+const sortModeEl = $("sortMode");
+
+// Stage badges
+const minorBadge = $("minorBadge");
+const moderateBadge = $("moderateBadge");
+const majorBadge = $("majorBadge");
+
+// Monthly averages
+const monthAvgMeta = $("monthAvgMeta");
+const monthAvgBody = $("monthAvgBody");
+
 
 /* If ANY JS error happens, show it in the UI so you’re not blind */
 window.addEventListener("error",(e)=>{
@@ -672,8 +745,22 @@ function updateUnitsAndBadges(){
   moderateBadge.textContent = `${T.moderateLow.toFixed(2)}–${T.majorLow.toFixed(2)}`;
   majorBadge.textContent = `≥ ${T.majorLow.toFixed(2)}`;
 
-  datumBtn.textContent = "Datum: " + datumLabel();
+  // reflect toggle state
+  document.querySelectorAll(".datumBtn").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.datum === DISPLAY_DATUM);
+  });
 }
+
+
+  const T = THRESH[DISPLAY_DATUM];
+  minorBadge.textContent = `${T.minorLow.toFixed(2)}–${T.moderateLow.toFixed(2)}`;
+  moderateBadge.textContent = `${T.moderateLow.toFixed(2)}–${T.majorLow.toFixed(2)}`;
+  majorBadge.textContent = `≥ ${T.majorLow.toFixed(2)}`;
+
+document.querySelectorAll(".datumBtn").forEach(btn=>{
+  btn.classList.toggle("active", btn.dataset.datum === DISPLAY_DATUM);
+});
+
 
 /* Simple helpers */
 function maxPoint(arr){ return arr.reduce((a,b)=>b.ft>a.ft?b:a, arr[0]); }
@@ -1932,54 +2019,59 @@ $("resetBtn").addEventListener("click", ()=>{
   applyFilter();
 });
 
-datumBtn.addEventListener("click", ()=>{
+function setDatum(newDatum){
+  if(!newDatum || newDatum === DISPLAY_DATUM) return;
+
   const oldDatum = DISPLAY_DATUM;
 
+  // read current filter inputs (in OLD display datum)
   const vMin = parseFloat(minElevEl.value);
   const vMax = parseFloat(maxElevEl.value);
 
+  // convert OLD display -> NAVD (stable internal)
   function toNavdFromOldDisplay(v){
     if(!Number.isFinite(v)) return null;
-    return (oldDatum==="MLLW") ? mllwToNavd(v) : v;
+    return (oldDatum === "MLLW") ? mllwToNavd(v) : v;
   }
 
-  // convert current inputs -> NAVD (stable internal datum)
   const navdMin = toNavdFromOldDisplay(vMin);
   const navdMax = toNavdFromOldDisplay(vMax);
 
-  // flip datum
-  DISPLAY_DATUM = (DISPLAY_DATUM==="MLLW") ? "NAVD88" : "MLLW";
+  // flip to NEW datum
+  DISPLAY_DATUM = newDatum;
 
+  // convert NAVD -> NEW display
   function toNewDisplayFromNavd(navd){
-    if(navd===null || !Number.isFinite(navd)) return null;
-    return (DISPLAY_DATUM==="MLLW") ? navdToMllw(navd) : navd;
+    if(navd === null || !Number.isFinite(navd)) return null;
+    return (DISPLAY_DATUM === "MLLW") ? navdToMllw(navd) : navd;
   }
 
-  // write inputs back in the NEW display datum
   const newMin = toNewDisplayFromNavd(navdMin);
   const newMax = toNewDisplayFromNavd(navdMax);
 
-  minElevEl.value = (newMin===null)
+  // write back inputs in NEW display datum
+  minElevEl.value = (newMin === null)
     ? THRESH[DISPLAY_DATUM].minorLow.toFixed(2)
     : newMin.toFixed(2);
 
-  maxElevEl.value = (newMax===null) ? "" : newMax.toFixed(2);
+  maxElevEl.value = (newMax === null) ? "" : newMax.toFixed(2);
 
-  // refresh everything that depends on DISPLAY_DATUM
+  // refresh UI + dependent widgets
   updateUnitsAndBadges();
   renderTopTen();
   applyFilter();
   updateMonthAveragesFromTXT();
   renderAnnual();
 
-  // refresh live cards (stored internally as NAVD or MLLW where noted)
+  // refresh live cards
   if(STATE.lastNavd){
     curFtEl.textContent = toDisplayFtFromNavd(STATE.lastNavd.ft).toFixed(2);
     setStage(STATE.lastNavd.ft);
   }
 
   if(STATE.todayNavd && STATE.todayNavd.length){
-    const dmx = maxPoint(STATE.todayNavd), dmn = minPoint(STATE.todayNavd);
+    const dmx = maxPoint(STATE.todayNavd);
+    const dmn = minPoint(STATE.todayNavd);
     dayMaxFtEl.textContent = toDisplayFtFromNavd(dmx.ft).toFixed(2);
     dayMinFtEl.textContent = toDisplayFtFromNavd(dmn.ft).toFixed(2);
   } else {
@@ -1989,6 +2081,16 @@ datumBtn.addEventListener("click", ()=>{
 
   updatePred24RangeCard();
   updateTsChartFromState();
+
+  // set active state on the toggle UI (if you used .datumBtn)
+  document.querySelectorAll(".datumBtn").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.datum === DISPLAY_DATUM);
+  });
+}
+
+// Wire up the two-sided toggle buttons
+document.querySelectorAll(".datumBtn").forEach(btn=>{
+  btn.addEventListener("click", ()=> setDatum(btn.dataset.datum));
 });
 
 /* Start */
