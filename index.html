@@ -371,7 +371,12 @@
     <div class="card">
       <div class="hrow"><h2>Historic Flooding Filter</h2></div>
       <div class="filterRow">
-        <input class="input" id="minElev" type="number" step="0.01" value="7.60" />
+        <input class="input" id="minElev" type="number" step="0.01" value="7.60" placeholder="Min (ft)" />
+<input class="input" id="maxElev" type="number" step="0.01" value="9.99" placeholder="Max (ft)" />
+
+<input class="input" id="fromDate" type="date" />
+<input class="input" id="toDate" type="date" />
+
         <select id="sortMode">
           <option value="desc">Highest first</option>
           <option value="asc">Lowest first</option>
@@ -476,10 +481,22 @@ const topTenUnitTh=$("topTenUnitTh");
 const fcNote=$("fcNote");
 const txtNote=$("txtNote");
 
-const histBody=$("histBody"), histMeta=$("histMeta"), histUnitTh=$("histUnitTh");
-const minElevEl=$("minElev"), sortModeEl=$("sortMode");
-const minorBadge=$("minorBadge"), moderateBadge=$("moderateBadge"), majorBadge=$("majorBadge");
-const datumBtn=$("datumBtn");
+const histBody = $("histBody"),
+      histMeta = $("histMeta"),
+      histUnitTh = $("histUnitTh");
+
+const minElevEl  = $("minElev"),
+      maxElevEl  = $("maxElev"),
+      fromDateEl = $("fromDate"),
+      toDateEl   = $("toDate"),
+      sortModeEl = $("sortMode");
+
+const minorBadge = $("minorBadge"),
+      moderateBadge = $("moderateBadge"),
+      majorBadge = $("majorBadge");
+
+const datumBtn = $("datumBtn");
+
 
 const monthAvgMeta=$("monthAvgMeta"), monthAvgBody=$("monthAvgBody");
 
@@ -578,7 +595,7 @@ function updateUnitsAndBadges(){
 /* Simple helpers */
 function maxPoint(arr){ return arr.reduce((a,b)=>b.ft>a.ft?b:a, arr[0]); }
 function minPoint(arr){ return arr.reduce((a,b)=>b.ft<a.ft?b:a, arr[0]); }
-function setTXTStatus(msg){ if(txtNote) txtNote.textContent = ""; }
+function setTXTStatus(msg){ if(txtNote) txtNote.textContent = msg || ""; }
       function thresholdsDisplay(){
   const T = THRESH[DISPLAY_DATUM];
   return { minor:T.minorLow, moderate:T.moderateLow, major:T.majorLow };
@@ -1386,39 +1403,71 @@ tsChart.update();
 Historic filter from TXT
 ========================= */
 function hydrateHistoricFromTXT(){
-  HIGH_TIDES_NAVD = (DAILY_EVENTS_NAVD||[]).map(e=>({t:e.t, ft:e.ft, kind:e.kind, y:e.y, m:e.m, d:e.d}));
+  HIGH_TIDES_NAVD = (DAILY_EVENTS_NAVD||[]).map(e=>({
+    t:e.t, ft:e.ft, kind:e.kind, y:e.y, m:e.m, d:e.d
+  }));
+
+  // keep a consistent base order (newest first) for "recent"
   HIGH_TIDES_NAVD.sort((a,b)=>new Date(b.t)-new Date(a.t));
+
   applyFilter();
-  histMeta.textContent = "";
+  if(histMeta) histMeta.textContent = "";
 }
 
 function renderHist(rowsNavd){
-  histBody.innerHTML="";
-  const show=rowsNavd.slice(0, 100);
+  histBody.innerHTML = "";
+
+  const LIMIT = 10;                      // ✅ only show 10
+  const show = rowsNavd.slice(0, LIMIT);
+
   for(const r of show){
-    const tag=stageTagByNavd(r.ft);
+    const tag  = stageTagByNavd(r.ft);
     const disp = toDisplayFtFromNavd(r.ft);
-    const label = r.kind ? `${r.kind} · ` : "";
-    const tr=document.createElement("tr");
-    tr.innerHTML=`
-   <td>${fmtNiceDate(r.t)}</td>
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtNiceDate(r.t)}</td>
       <td><b>${disp.toFixed(2)}</b></td>
       <td><span class="tag"><span class="chip" style="background:${tag.c}"></span>${tag.txt}</span></td>
     `;
     histBody.appendChild(tr);
   }
-  histMeta.textContent=`Showing ${Math.min(100, rowsNavd.length)} of ${rowsNavd.length.toLocaleString()}`;
+
+  histMeta.textContent = `Showing ${Math.min(LIMIT, rowsNavd.length)} of ${rowsNavd.length.toLocaleString()}`;
 }
 
 function applyFilter(){
-  const minDisplay=parseFloat(minElevEl.value);
-  const minNavd = fromDisplayToNavd(minDisplay);
-  const mode=sortModeEl.value;
+  // NEW: range inputs (display datum)
+  const minDisplay = parseFloat(minElevEl.value);
+  const maxDisplay = parseFloat(maxElevEl.value);
 
-  let rows=HIGH_TIDES_NAVD.filter(r=>r.ft>=minNavd);
+  // NEW: date inputs (YYYY-MM-DD) — inclusive
+  const fromStr = (fromDateEl?.value || "").trim();
+  const toStr   = (toDateEl?.value   || "").trim();
 
-  if(mode==="desc") rows.sort((a,b)=>b.ft-a.ft);
-  if(mode==="asc") rows.sort((a,b)=>a.ft-b.ft);
+  // Convert elev range -> NAVD (your data are NAVD)
+  const minNavd = Number.isFinite(minDisplay) ? fromDisplayToNavd(minDisplay) : -Infinity;
+  const maxNavd = Number.isFinite(maxDisplay) ? fromDisplayToNavd(maxDisplay) :  Infinity;
+
+  // Build date bounds in ms (inclusive). Using UTC parsing is fine since we compare ISO times.
+  const fromMs = fromStr ? new Date(fromStr + "T00:00:00Z").getTime() : -Infinity;
+  const toMs   = toStr   ? new Date(toStr   + "T23:59:59Z").getTime() :  Infinity;
+
+  const mode = sortModeEl.value;
+
+  let rows = HIGH_TIDES_NAVD.filter(r=>{
+    if(r.ft < minNavd || r.ft > maxNavd) return false;
+
+    const tMs = new Date(r.t).getTime();
+    if(!Number.isFinite(tMs)) return false;
+
+    if(tMs < fromMs || tMs > toMs) return false;
+
+    return true;
+  });
+
+  if(mode==="desc")   rows.sort((a,b)=>b.ft-a.ft);
+  if(mode==="asc")    rows.sort((a,b)=>a.ft-b.ft);
   if(mode==="recent") rows.sort((a,b)=>new Date(b.t)-new Date(a.t));
 
   renderHist(rows);
@@ -1659,6 +1708,7 @@ async function boot(){
     monthAvgMeta.textContent =
       "TXT load failed (monthly averages unavailable). See TXT status line.";
   }
+
   if(results[2].status==="rejected"){
     console.error("Live init failed:", results[2].reason);
     stageTextEl.textContent="LIVE DATA UNAVAILABLE";
@@ -1675,37 +1725,61 @@ $("applyBtn").addEventListener("click", applyFilter);
 
 $("resetBtn").addEventListener("click", ()=>{
   minElevEl.value = THRESH[DISPLAY_DATUM].minorLow.toFixed(2);
-  sortModeEl.value="desc";
+  maxElevEl.value = "";
+  if(fromDateEl) fromDateEl.value = "";
+  if(toDateEl)   toDateEl.value = "";
+  sortModeEl.value = "desc";
   applyFilter();
 });
 
 datumBtn.addEventListener("click", ()=>{
   const oldDatum = DISPLAY_DATUM;
-  const v = parseFloat(minElevEl.value);
 
-  if(Number.isFinite(v)){
-    const navd = (oldDatum==="MLLW") ? mllwToNavd(v) : v;
-    DISPLAY_DATUM = (DISPLAY_DATUM==="MLLW") ? "NAVD88" : "MLLW";
-    const newDisplayVal = (DISPLAY_DATUM==="MLLW") ? navdToMllw(navd) : navd;
-    minElevEl.value = newDisplayVal.toFixed(2);
-  }else{
-    DISPLAY_DATUM = (DISPLAY_DATUM==="MLLW") ? "NAVD88" : "MLLW";
-    minElevEl.value = THRESH[DISPLAY_DATUM].minorLow.toFixed(2);
+  const vMin = parseFloat(minElevEl.value);
+  const vMax = parseFloat(maxElevEl.value);
+
+  function toNavdFromOldDisplay(v){
+    if(!Number.isFinite(v)) return null;
+    return (oldDatum==="MLLW") ? mllwToNavd(v) : v;
   }
 
+  // convert current inputs -> NAVD (stable internal datum)
+  const navdMin = toNavdFromOldDisplay(vMin);
+  const navdMax = toNavdFromOldDisplay(vMax);
+
+  // flip datum
+  DISPLAY_DATUM = (DISPLAY_DATUM==="MLLW") ? "NAVD88" : "MLLW";
+
+  function toNewDisplayFromNavd(navd){
+    if(navd===null || !Number.isFinite(navd)) return null;
+    return (DISPLAY_DATUM==="MLLW") ? navdToMllw(navd) : navd;
+  }
+
+  // write inputs back in the NEW display datum
+  const newMin = toNewDisplayFromNavd(navdMin);
+  const newMax = toNewDisplayFromNavd(navdMax);
+
+  minElevEl.value = (newMin===null)
+    ? THRESH[DISPLAY_DATUM].minorLow.toFixed(2)
+    : newMin.toFixed(2);
+
+  maxElevEl.value = (newMax===null) ? "" : newMax.toFixed(2);
+
+  // refresh everything that depends on DISPLAY_DATUM
   updateUnitsAndBadges();
   renderTopTen();
   applyFilter();
   updateMonthAveragesFromTXT();
   renderAnnual();
 
+  // refresh live cards (stored internally as NAVD or MLLW where noted)
   if(STATE.lastNavd){
     curFtEl.textContent = toDisplayFtFromNavd(STATE.lastNavd.ft).toFixed(2);
     setStage(STATE.lastNavd.ft);
   }
 
   if(STATE.todayNavd && STATE.todayNavd.length){
-    const dmx=maxPoint(STATE.todayNavd), dmn=minPoint(STATE.todayNavd);
+    const dmx = maxPoint(STATE.todayNavd), dmn = minPoint(STATE.todayNavd);
     dayMaxFtEl.textContent = toDisplayFtFromNavd(dmx.ft).toFixed(2);
     dayMinFtEl.textContent = toDisplayFtFromNavd(dmn.ft).toFixed(2);
   } else {
@@ -1727,6 +1801,5 @@ boot().catch(err=>{
 setInterval(()=>boot().catch(()=>{}), 5*60*1000);
 
     </script>
-  </div>
 </body>
 </html>
