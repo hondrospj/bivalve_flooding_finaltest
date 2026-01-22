@@ -796,7 +796,7 @@ async function loadDailyTidesFromTXT(){
   const {url, text} = await resolveDailyTidesTXTUrl();
   DAILY_TIDES = parseUSGSDailyTidesTXT(text);
   DAILY_EVENTS_NAVD = buildDailyEventsFromDailyTides(DAILY_TIDES);
-  setTXTStatus(`TXT OK: ${DAILY_TIDES.length.toLocaleString()} daily rows (${DAILY_EVENTS_NAVD.length.toLocaleString()} events) from ${url}`);
+  setTXTStatus(""); // suppress TXT OK message
 }
 
 /* =========================
