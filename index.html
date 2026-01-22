@@ -405,7 +405,7 @@
     <div style="height:14px"></div>
 
     <script>
-  /* Fixed EST year-round (UTC-5). */
+/* Fixed EST year-round (UTC-5). */
 const TZ="Etc/GMT+5";
 
 /* Datum toggle */
@@ -437,6 +437,11 @@ const THRESH = {
 /* Peak counting settings */
 const PEAK_MIN_SEP_MINUTES = 300;
 
+      /* Historic filter: switch to live after this date */
+const LIVE_START_ISO = "2026-01-01T00:00:00Z"; // use >= Jan 1 2026
+
+
+
 /* NWS alerts point */
 const ALERT_POINT={lat:39.2325, lon:-75.0380};
 
@@ -449,6 +454,7 @@ const TXT_PATH_CANDIDATES = [
   `/data/${DAILY_TIDES_TXT_FILE}`
 ];
 let DAILY_TIDES_TXT_URL = TXT_PATH_CANDIDATES[0];
+
 
 /* TXT columns (NAVD88 daily stats for parameter 72279) */
 const COL_DAILY_HIGH = "239251_72279_00021";
@@ -1103,6 +1109,79 @@ function colorForFtDisplay(ftDisplay){
   if(ftDisplay>=T.minorLow) return "rgba(251,191,36,.95)";
   return "rgba(45,212,191,.90)";
 }
+/* =========================
+STEP 2 — capture individual flood peaks (not just counts)
+PASTE THIS RIGHT ABOVE:  function countFloodPeaks_NAVD(series){
+========================= */
+function extractFloodPeaks_NAVD(series){
+  if(!series || series.length < 3) return [];
+
+  const T = THRESH.NAVD88;
+
+  // sort ascending by time
+  const pts = [...series].sort((a,b)=> new Date(a.t) - new Date(b.t));
+
+  // find local maxima above minor threshold
+  const candidates = [];
+  for(let i=1;i<pts.length-1;i++){
+    const a = pts[i-1], b = pts[i], c = pts[i+1];
+    if(b.ft >= T.minorLow && b.ft >= a.ft && b.ft >= c.ft){
+      // avoid flat triple-plateau
+      if(!(b.ft === a.ft && b.ft === c.ft)) candidates.push(b);
+    }
+  }
+  if(!candidates.length) return [];
+
+  // de-cluster peaks that are too close together (keep the highest within the window)
+  const minSepMs = PEAK_MIN_SEP_MINUTES * 60 * 1000;
+
+  const kept = [];
+  let cur = candidates[0];
+
+  for(let i=1;i<candidates.length;i++){
+    const p = candidates[i];
+    if(new Date(p.t) - new Date(cur.t) <= minSepMs){
+      if(p.ft > cur.ft) cur = p;
+    }else{
+      kept.push(cur);
+      cur = p;
+    }
+  }
+  kept.push(cur);
+
+  // classify each peak by NAVD thresholds
+  return kept.map(p=>{
+    let type = "Minor";
+    if(p.ft >= T.majorLow) type = "Major";
+    else if(p.ft >= T.moderateLow) type = "Moderate";
+    return { t: p.t, ft: p.ft, type };
+  });
+}
+
+      /* =========================
+STEP 3 — build live flood peak events since Jan 1 2026
+These are NAVD88 peaks from USGS 15-min data (same datum as your TXT events)
+========================= */
+async function buildLiveFloodPeaksSince2026(){
+  // Pull from Jan 1 2026 -> now (NAVD88, param 72279)
+  const startISO = LIVE_START_ISO;
+  const endISO = nowISO();
+
+  const series = await fetchObservedSeries({ startISO, endISO });
+  if(!series || !series.length) return [];
+
+  // Extract individual peak events (NAVD88)
+  const peaks = extractFloodPeaks_NAVD(series); // [{t, ft, type}]
+  // Normalize into the same shape your filter table expects (and your monthly/yearly code can use)
+  return peaks.map(p => ({
+    t: p.t,             // ISO
+    ft: p.ft,           // NAVD88 feet
+    kind: "LivePeak",   // just a label; not used for logic
+    source: "USGS",
+    type: p.type        // Minor/Moderate/Major (optional; nice for debugging)
+  }));
+}
+
 
 /* Peak counting uses NAVD thresholds */
 function countFloodPeaks_NAVD(series){
@@ -1403,17 +1482,42 @@ tsChart.update();
 /* =========================
 Historic filter from TXT
 ========================= */
-function hydrateHistoricFromTXT(){
-  HIGH_TIDES_NAVD = (DAILY_EVENTS_NAVD||[]).map(e=>({
-    t:e.t, ft:e.ft, kind:e.kind, y:e.y, m:e.m, d:e.d
+async function hydrateHistoricFromTXT(){
+  // 1) Base history from TXT (NAVD88 daily “events”)
+  const txtEvents = (DAILY_EVENTS_NAVD||[]).map(e=>({
+    t:e.t, ft:e.ft, kind:e.kind, y:e.y, m:e.m, d:e.d,
+    source:"TXT"
   }));
 
-  // keep a consistent base order (newest first) for "recent"
+  // 2) Live peaks from USGS since Jan 1 2026 (NAVD88)
+  let livePeaks = [];
+  try{
+    livePeaks = await buildLiveFloodPeaksSince2026();
+  }catch(e){
+    console.error("Live peaks build failed:", e);
+    livePeaks = [];
+  }
+
+  // 3) Combine
+  const combined = [...txtEvents, ...livePeaks];
+
+  // 4) De-duplicate by timestamp+height (prevents duplicates if anything overlaps)
+  const seen = new Set();
+  HIGH_TIDES_NAVD = combined.filter(r=>{
+    const key = `${r.t}|${Number(r.ft).toFixed(3)}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // 5) Newest first for “recent”
   HIGH_TIDES_NAVD.sort((a,b)=>new Date(b.t)-new Date(a.t));
 
+  // 6) Refresh UI pieces that depend on HIGH_TIDES_NAVD
   applyFilter();
   if(histMeta) histMeta.textContent = "";
 }
+
 
 function renderHist(rowsNavd){
   histBody.innerHTML = "";
@@ -1682,11 +1786,12 @@ Init TXT-backed history
 ========================= */
 async function initTXTBackedHistory(){
   await loadDailyTidesFromTXT();
-  hydrateHistoricFromTXT();
+  await hydrateHistoricFromTXT();          // ✅ await now
   updateMonthAveragesFromTXT();
   buildAnnualArraysFromTXT_completedYears();
   renderAnnual();
 }
+
 
 /* =========================
 Boot
