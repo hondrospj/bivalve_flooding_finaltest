@@ -470,7 +470,7 @@ const TOP_TEN_MLLW = [
   {date:"01-23-2016", ft:8.99},
   {date:"04-19-2022", ft:8.91},
   {date:"08-21-2025", ft:8.90},
-  {date:"10-26-2019", ft:8.82},
+  {date:"10-26-2018", ft:8.82},
   {date:"03-09-2024", ft:8.80}
 ];
 
@@ -1037,15 +1037,13 @@ function resampleTo15Min_MLLW(predSeries, startISO, endISO){
   return { labels, values };
 }
 
-/* =========================
-NOAA-style flood stage bands + lines on TS chart
-========================= */
 const floodBandsPlugin = {
-  id:"floodBands",
-  beforeDatasetsDraw(chart){
-    if(chart?.canvas?.id !== "tsChart") return;
-    const {ctx, chartArea, scales} = chart;
-    if(!ctx || !chartArea || !scales?.y) return;
+  id: "floodBands",
+  beforeDatasetsDraw(chart) {
+    if (chart?.canvas?.id !== "tsChart") return;
+
+    const { ctx, chartArea, scales } = chart;
+    if (!ctx || !chartArea || !scales?.y) return;
 
     const y = scales.y;
     const left = chartArea.left, right = chartArea.right;
@@ -1055,10 +1053,11 @@ const floodBandsPlugin = {
     const yModer = y.getPixelForValue(T.moderateLow);
     const yMajor = y.getPixelForValue(T.majorLow);
 
-    if(!Number.isFinite(yMinor) || !Number.isFinite(yModer) || !Number.isFinite(yMajor)) return;
+    if (![yMinor,yModer,yMajor].every(Number.isFinite)) return;
 
     ctx.save();
 
+    // bands
     ctx.fillStyle = "rgba(251,191,36,.10)";
     ctx.fillRect(left, yModer, right-left, (yMinor - yModer));
 
@@ -1068,25 +1067,51 @@ const floodBandsPlugin = {
     ctx.fillStyle = "rgba(167,139,250,.10)";
     ctx.fillRect(left, chartArea.top, right-left, (yMajor - chartArea.top));
 
+    // dashed lines
     ctx.setLineDash([6,4]);
     ctx.lineWidth = 1.5;
 
-    function hline(py, stroke){
+    const hline = (py, stroke) => {
       ctx.strokeStyle = stroke;
       ctx.beginPath();
       ctx.moveTo(left, py);
       ctx.lineTo(right, py);
       ctx.stroke();
-    }
+    };
+
     hline(yMinor, "rgba(251,191,36,.75)");
     hline(yModer, "rgba(251,113,133,.75)");
     hline(yMajor, "rgba(167,139,250,.75)");
+
+    // big labels
+    ctx.setLineDash([]);
+    const size = 24;
+    ctx.font = `950 ${size}px ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+
+    const padX = 10, padY = 6;
+    const clampY = (py) => {
+      const topLimit = chartArea.top + size + 2;
+      const botLimit = chartArea.bottom - 2;
+      return Math.min(Math.max(py - padY, topLimit), botLimit);
+    };
+
+    const label = (text, py, color) => {
+      ctx.fillStyle = color;
+      ctx.fillText(text, left + padX, clampY(py));
+    };
+
+    label("Minor", yMinor, "rgba(251,191,36,.95)");
+    label("Moderate", yModer, "rgba(251,113,133,.95)");
+    label("Major", yMajor, "rgba(167,139,250,.95)");
 
     ctx.restore();
   }
 };
 
 Chart.register(floodBandsPlugin);
+
 
 /* =========================
 Core state
@@ -1479,8 +1504,6 @@ yMax = Math.ceil(yMax / STEP) * STEP;
 tsChart.options.scales.y.min = yMin;
 tsChart.options.scales.y.max = yMax;
 tsChart.options.scales.y.ticks.stepSize = STEP;
-
-// --------------------------------------------
 
 tsChart.update();
 
