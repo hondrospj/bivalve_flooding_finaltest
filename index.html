@@ -236,28 +236,44 @@ MOBILE HEADER: fix cutoff + center everything
     .rangeVal{font-weight:950;font-size:36px;line-height:1;margin-top:6px}
     .rangeMeta{color:var(--muted);font-size:12.5px;margin-top:8px}
 
-    .stages{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(220px,1fr));
-      gap:10px;
-      overflow-x:auto;
-      padding-bottom:2px;
-      -webkit-overflow-scrolling:touch;
-      margin-top:10px
-    }
-    @media(max-width:760px){.stages{grid-template-columns:1fr;overflow-x:visible}}
-    .stage{
-      background:var(--card2);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:14px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      min-width:220px;
-      overflow:hidden;
-    }
+   .stages{
+  display:grid;
+  gap:10px;
+  margin-top:10px;
+
+  /* Desktop / tablet: 3 centered cards */
+  grid-template-columns: repeat(3, 320px);
+  justify-content:center;   /* center the 3 cards as a group */
+
+  /* Remove horizontal scrolling */
+  overflow-x: hidden;
+  padding-bottom: 2px;
+}
+
+/* Mobile: stack vertically, full width */
+@media (max-width:760px){
+  .stages{
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+}
+
+.stage{
+  background:var(--card2);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:14px 18px;
+
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+
+  /* Prevent overflow + weird sizing */
+  min-width: 0;
+  overflow:hidden;
+}
+
     .stageName{font-weight:950;font-size:20px;letter-spacing:.2px;white-space:nowrap;flex:1 1 auto;min-width:0}
     .badge{font-weight:950;font-size:13px;padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);white-space:nowrap;flex:0 0 auto}
 
