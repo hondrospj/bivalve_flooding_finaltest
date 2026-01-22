@@ -1109,23 +1109,25 @@ function colorForFtDisplay(ftDisplay){
   if(ftDisplay>=T.minorLow) return "rgba(251,191,36,.95)";
   return "rgba(45,212,191,.90)";
 }
-/* =========================
-STEP 2 — capture individual flood peaks (not just counts)
-PASTE THIS RIGHT ABOVE:  function countFloodPeaks_NAVD(series){
-========================= */
+
 function extractFloodPeaks_NAVD(series){
   if(!series || series.length < 3) return [];
 
   const T = THRESH.NAVD88;
 
-  // sort ascending by time
-  const pts = [...series].sort((a,b)=> new Date(a.t) - new Date(b.t));
+  // sort ascending by time + sanitize ft
+  const pts = [...series]
+    .map(p => ({ t: p.t, ft: Number(p.ft) }))
+    .filter(p => p.t && Number.isFinite(p.ft))
+    .sort((a,b)=> new Date(a.t) - new Date(b.t));
 
-  // find local maxima above minor threshold
+  if(pts.length < 3) return [];
+
+  // find local maxima (ALL peaks — no minor-threshold gate)
   const candidates = [];
   for(let i=1;i<pts.length-1;i++){
     const a = pts[i-1], b = pts[i], c = pts[i+1];
-    if(b.ft >= T.minorLow && b.ft >= a.ft && b.ft >= c.ft){
+    if(b.ft >= a.ft && b.ft >= c.ft){
       // avoid flat triple-plateau
       if(!(b.ft === a.ft && b.ft === c.ft)) candidates.push(b);
     }
@@ -1140,7 +1142,11 @@ function extractFloodPeaks_NAVD(series){
 
   for(let i=1;i<candidates.length;i++){
     const p = candidates[i];
-    if(new Date(p.t) - new Date(cur.t) <= minSepMs){
+
+    const pt = new Date(p.t).getTime();
+    const ct = new Date(cur.t).getTime();
+
+    if(Number.isFinite(pt) && Number.isFinite(ct) && (pt - ct) <= minSepMs){
       if(p.ft > cur.ft) cur = p;
     }else{
       kept.push(cur);
@@ -1149,11 +1155,12 @@ function extractFloodPeaks_NAVD(series){
   }
   kept.push(cur);
 
-  // classify each peak by NAVD thresholds
+  // classify each peak by NAVD thresholds (includes "Below")
   return kept.map(p=>{
-    let type = "Minor";
+    let type = "Below";
     if(p.ft >= T.majorLow) type = "Major";
     else if(p.ft >= T.moderateLow) type = "Moderate";
+    else if(p.ft >= T.minorLow) type = "Minor";
     return { t: p.t, ft: p.ft, type };
   });
 }
@@ -1897,14 +1904,25 @@ datumBtn.addEventListener("click", ()=>{
   updateTsChartFromState();
 });
 
-/* Start + auto-refresh */
+/* Start */
 boot().catch(err=>{
   console.error(err);
   stageTextEl.textContent="LIVE DATA UNAVAILABLE";
   lastPill.textContent="Last updated: —";
 });
 
-setInterval(()=>boot().catch(()=>{}), 5*60*1000);
+/* Auto-refresh (LIVE only — don’t reload TXT every time) */
+setInterval(async ()=>{
+  try{
+    await Promise.allSettled([
+      updateAlerts(),
+      updateLiveAndAnnualCounts(),
+      updateTimeseries()
+    ]);
+  }catch(e){
+    console.error(e);
+  }
+}, 5*60*1000);
 
     </script>
 </body>
