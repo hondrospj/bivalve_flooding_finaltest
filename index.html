@@ -177,7 +177,7 @@
     .btn{cursor:pointer}
     .btn:hover{filter:brightness(1.06)}
     .hint{color:var(--muted);font-size:12.5px;line-height:1.25}
-  </style>
+</style>
 </head>
 
 <body>
@@ -207,108 +207,107 @@
       </div>
     </div>
 
-    <div class="grid">
-      <div class="card">
-        <div class="hrow">
-          <h2>Live conditions</h2>
-          <div class="kicker" style="text-transform:none">Time Expressed In EST</div>
-        </div>
-
-        <!-- ✅ FIXED: ONE metrics container with TWO cards -->
-        <div class="metrics">
-          <div class="metric">
-            <div class="ml">Current water elevation</div>
-            <div class="mv">
-              <span id="curFt">—</span>
-              <span class="unit" data-unit>ft MLLW</span>
-            </div>
-            <div class="ms" id="curMeta">Updated: —</div>
-            <div class="ms" id="nearMeta" style="display:none"></div>
-          </div>
-
-          <div class="metric">
-            <div class="ml">Predicted range (next 24h)</div>
-
-            <div class="mv" style="gap:16px">
-              <span style="display:flex;align-items:baseline;gap:10px">
-                <span style="color:var(--muted);font-size:12px;font-weight:950;letter-spacing:.2px;text-transform:uppercase">Max</span>
-                <span id="pred24MaxFt">—</span>
-                <span class="unit" data-unit>ft MLLW</span>
-              </span>
-            </div>
-
-            <div class="mv" style="gap:16px;margin-top:6px">
-              <span style="display:flex;align-items:baseline;gap:10px">
-                <span style="color:var(--muted);font-size:12px;font-weight:950;letter-spacing:.2px;text-transform:uppercase">Min</span>
-                <span id="pred24MinFt">—</span>
-                <span class="unit" data-unit>ft MLLW</span>
-              </span>
-            </div>
-
-            <div class="ms" id="pred24Meta">—</div>
-          </div>
-        </div>
-
-        <div class="rangeBox">
-          <div class="rangeTitle">Daily range (today)</div>
-          <div class="rangeRow">
-            <div class="rangeCol">
-              <div class="rangeLab">Max</div>
-              <div class="rangeVal">
-                <span id="dayMaxFt">—</span>
-                <span class="unit" data-unit>ft MLLW</span>
-              </div>
-            </div>
-            <div class="rangeCol">
-              <div class="rangeLab">Min</div>
-              <div class="rangeVal">
-                <span id="dayMinFt">—</span>
-                <span class="unit" data-unit>ft MLLW</span>
-              </div>
-            </div>
-          </div>
-          <div class="rangeMeta" id="dayRangeMeta">—</div>
-        </div>
-
-        <div class="stages" aria-label="Flood stages">
-          <div class="stage">
-            <div class="stageName">Minor</div>
-            <div class="badge" id="minorBadge" style="color:var(--minor)">7.60–8.60</div>
-          </div>
-          <div class="stage">
-            <div class="stageName">Moderate</div>
-            <div class="badge" id="moderateBadge" style="color:var(--moderate)">8.60–9.60</div>
-          </div>
-          <div class="stage">
-            <div class="stageName">Major</div>
-            <div class="badge" id="majorBadge" style="color:var(--major)">≥ 9.60</div>
-          </div>
-        </div>
-
-        <div class="chartWrap"><canvas id="annualChart"></canvas></div>
-        <div class="foot" id="annualNote"></div>
+    <!-- 1) Live Conditions -->
+    <div class="card">
+      <div class="hrow">
+        <h2>Live conditions</h2>
+        <div class="kicker" style="text-transform:none">Time Expressed In EST</div>
       </div>
 
-      <div class="card" style="display:flex;flex-direction:column">
-        <div class="hrow"><h2>Top ten highest tides</h2></div>
-        <div class="table" style="flex:1 1 auto">
-          <table aria-label="Top ten highest tides">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Date</th>
-                <th id="topTenUnitTh">Height (ft MLLW)</th>
-                <th>Type</th>
-              </tr>
-            </thead>
-            <tbody id="topTenBody"></tbody>
-          </table>
+      <div class="metrics">
+        <div class="metric">
+          <div class="ml">Current water elevation</div>
+          <div class="mv">
+            <span id="curFt">—</span>
+            <span class="unit" data-unit>ft MLLW</span>
+          </div>
+          <div class="ms" id="curMeta">Updated: —</div>
+          <div class="ms" id="nearMeta" style="display:none"></div>
+        </div>
+
+        <div class="metric">
+          <div class="ml">Predicted range (next 24h)</div>
+
+          <div class="mv" style="gap:16px">
+            <span style="display:flex;align-items:baseline;gap:10px">
+              <span style="color:var(--muted);font-size:12px;font-weight:950;letter-spacing:.2px;text-transform:uppercase">Max</span>
+              <span id="pred24MaxFt">—</span>
+              <span class="unit" data-unit>ft MLLW</span>
+            </span>
+          </div>
+
+          <div class="mv" style="gap:16px;margin-top:6px">
+            <span style="display:flex;align-items:baseline;gap:10px">
+              <span style="color:var(--muted);font-size:12px;font-weight:950;letter-spacing:.2px;text-transform:uppercase">Min</span>
+              <span id="pred24MinFt">—</span>
+              <span class="unit" data-unit>ft MLLW</span>
+            </span>
+          </div>
+
+          <div class="ms" id="pred24Meta">—</div>
+        </div>
+      </div>
+
+      <div class="rangeBox">
+        <div class="rangeTitle">Daily range (today)</div>
+        <div class="rangeRow">
+          <div class="rangeCol">
+            <div class="rangeLab">Max</div>
+            <div class="rangeVal">
+              <span id="dayMaxFt">—</span>
+              <span class="unit" data-unit>ft MLLW</span>
+            </div>
+          </div>
+          <div class="rangeCol">
+            <div class="rangeLab">Min</div>
+            <div class="rangeVal">
+              <span id="dayMinFt">—</span>
+              <span class="unit" data-unit>ft MLLW</span>
+            </div>
+          </div>
+        </div>
+        <div class="rangeMeta" id="dayRangeMeta">—</div>
+      </div>
+
+      <div class="stages" aria-label="Flood stages">
+        <div class="stage">
+          <div class="stageName">Minor</div>
+          <div class="badge" id="minorBadge" style="color:var(--minor)">7.60–8.60</div>
+        </div>
+        <div class="stage">
+          <div class="stageName">Moderate</div>
+          <div class="badge" id="moderateBadge" style="color:var(--moderate)">8.60–9.60</div>
+        </div>
+        <div class="stage">
+          <div class="stageName">Major</div>
+          <div class="badge" id="majorBadge" style="color:var(--major)">≥ 9.60</div>
         </div>
       </div>
     </div>
 
     <div style="height:14px"></div>
 
+    <!-- 2) Top 10 Highest Tides -->
+    <div class="card" style="display:flex;flex-direction:column">
+      <div class="hrow"><h2>Top ten highest tides</h2></div>
+      <div class="table" style="flex:1 1 auto">
+        <table aria-label="Top ten highest tides">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Date</th>
+              <th id="topTenUnitTh">Height (ft MLLW)</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody id="topTenBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <!-- 3) Observations & Predictions -->
     <div class="card">
       <div class="hrow">
         <h2>Observations (USGS) & Predictions (NOAA)</h2>
@@ -331,6 +330,7 @@
 
     <div style="height:14px"></div>
 
+    <!-- 4) Average Floods Per Month -->
     <div class="card">
       <div class="hrow"><h2>Average Number of floods per month</h2></div>
       <div class="hint" id="monthAvgMeta">Computing…</div>
@@ -355,6 +355,19 @@
 
     <div style="height:14px"></div>
 
+    <!-- 5) Flooding over the years bar chart -->
+    <div class="card">
+      <div class="hrow">
+        <h2>Flooding over the years</h2>
+        <div class="kicker" style="text-transform:none"></div>
+      </div>
+      <div class="chartWrap"><canvas id="annualChart"></canvas></div>
+      <div class="foot" id="annualNote"></div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <!-- 6) Historic Flooding Filter -->
     <div class="card">
       <div class="hrow"><h2>Historic Flooding Filter</h2></div>
       <div class="filterRow">
