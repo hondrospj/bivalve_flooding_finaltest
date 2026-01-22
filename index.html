@@ -9,66 +9,70 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    /* ===== MOBILE: remove horizontal slider / overflow ===== */
-html, body{
-  width:100%;
-  max-width:100%;
-  overflow-x:hidden;
-}
+/* =========================
+MOBILE HEADER: fix cutoff + center everything
+========================= */
+@media (max-width: 760px){
+  .top{
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    gap:10px;
+  }
 
-/* Let flex/grid children shrink properly (prevents overflow) */
-.wrap, .grid, .card, .top, .brand, .brandTitle{
-  min-width:0;
-}
+  /* Center the right-side controls (Datum / Last updated / Flood stage) */
+  .top > div{
+    width:100%;
+    display:flex !important;
+    justify-content:center !important;
+    align-items:center !important;
+    flex-wrap:wrap;
+    gap:10px;
+  }
 
-.top{
-  flex-wrap:wrap;             /* allow wrapping instead of overflow */
-}
+  /* Brand block: stack logo + text and center */
+  .brand{
+    width:100%;
+    justify-content:center;
+    flex-direction:column;
+    gap:10px;
+    text-align:center;
+    min-width:0;
+  }
 
-.brand{
-  flex:1 1 520px;             /* can shrink/wrap */
-  min-width:0;
-}
+  .brandTitle{
+    align-items:center;
+    min-width:0;
+    width:100%;
+  }
 
-.brandTitle{
-  min-width:0;
-}
+  /* IMPORTANT: let the title wrap instead of being cut off */
+  .name{
+    white-space:normal !important;
+    overflow:visible !important;
+    text-overflow:unset !important;
+    line-height:1.15;
+  }
 
-.name{
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;         /* keeps title from causing overflow */
-}
+  .kicker{
+    white-space:normal;
+    line-height:1.2;
+  }
 
-.pill{
-  max-width:100%;
-}
-
-/* Threshold key: wrap on mobile so it never spills off-screen */
-#threshKey{
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:10px;
-}
-
-/* Your .tag already has white-space:nowrap; keep it, but avoid forcing overflow */
-#threshKey .tag{
-  max-width:100%;
-}
-
-/* Tables can be wide — contain scroll INSIDE the card, not the whole page */
-.table{
-  max-width:100%;
-  overflow-x:auto;
-  -webkit-overflow-scrolling:touch;
-}
-table{
-  min-width:520px;            /* optional: keeps columns readable while table scrolls internally */
-}
-@media(max-width:560px){
-  table{ min-width:0; }       /* allow full shrink on very small screens */
+  /* Center the card headers (like the chart title line) */
+  .hrow{
+    justify-content:center;
+    text-align:center;
+  }
+  .hrow h2{
+    width:100%;
+    text-align:center;
+  }
+  .hrow .kicker{
+    width:100%;
+    text-align:center;
+  }
 }
     
     :root{
