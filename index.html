@@ -9,6 +9,68 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
+    /* ===== MOBILE: remove horizontal slider / overflow ===== */
+html, body{
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
+}
+
+/* Let flex/grid children shrink properly (prevents overflow) */
+.wrap, .grid, .card, .top, .brand, .brandTitle{
+  min-width:0;
+}
+
+.top{
+  flex-wrap:wrap;             /* allow wrapping instead of overflow */
+}
+
+.brand{
+  flex:1 1 520px;             /* can shrink/wrap */
+  min-width:0;
+}
+
+.brandTitle{
+  min-width:0;
+}
+
+.name{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;         /* keeps title from causing overflow */
+}
+
+.pill{
+  max-width:100%;
+}
+
+/* Threshold key: wrap on mobile so it never spills off-screen */
+#threshKey{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+/* Your .tag already has white-space:nowrap; keep it, but avoid forcing overflow */
+#threshKey .tag{
+  max-width:100%;
+}
+
+/* Tables can be wide — contain scroll INSIDE the card, not the whole page */
+.table{
+  max-width:100%;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+table{
+  min-width:520px;            /* optional: keeps columns readable while table scrolls internally */
+}
+@media(max-width:560px){
+  table{ min-width:0; }       /* allow full shrink on very small screens */
+}
+    
     :root{
       --bg:#0b1220;
       --text:#eaf0ff;
