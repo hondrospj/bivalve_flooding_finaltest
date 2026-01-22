@@ -263,20 +263,17 @@ MOBILE HEADER: fix cutoff + center everything
   border:1px solid var(--line);
   border-radius:14px;
 
-  /* tighter padding */
   padding:10px 14px;
 
   display:flex;
   align-items:center;
+  justify-content:center;  /* center the group in the card */
+  gap:10px;                /* space between label + badge */
 
-  /* bring label + number closer together */
-  justify-content:flex-start;
-  gap:8px;
-
-  /* Prevent overflow + weird sizing */
   min-width:0;
   overflow:hidden;
 }
+
 
 
 .stageName{
@@ -284,12 +281,10 @@ MOBILE HEADER: fix cutoff + center everything
   font-size:20px;
   letter-spacing:.2px;
   white-space:nowrap;
-
-  /* IMPORTANT: stop stretching */
   flex:0 0 auto;
-
   min-width:0;
 }
+
 
   .badge{
   font-weight:950;
