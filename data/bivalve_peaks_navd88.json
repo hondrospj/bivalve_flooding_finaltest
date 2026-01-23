@@ -3,6 +3,11 @@
   "parameterCd": "72279",
   "datum": "NAVD88",
   "peakMinSepMinutes": 300,
+  "thresholdsNAVD88": {
+    "minorLow": 0,
+    "moderateLow": 0,
+    "majorLow": 0
+  },
   "lastProcessedISO": "2000-01-01T00:00:00Z",
   "events": []
 }
