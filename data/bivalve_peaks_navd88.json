@@ -1,13 +1,245 @@
-{
-  "site": "01412150",
-  "parameterCd": "72279",
-  "datum": "NAVD88",
-  "peakMinSepMinutes": 300,
-  "thresholdsNAVD88": {
-    "minorLow": 0,
-    "moderateLow": 0,
-    "majorLow": 0
-  },
-  "lastProcessedISO": "2000-01-01T00:00:00Z",
-  "events": []
+#!/usr/bin/env node
+/**
+ * Update/build NAVD88 peak events for USGS 01412150 (param 72279)
+ * Cache: data/bivalve_peaks_navd88.json
+ *
+ * Modes:
+ *   node tools/update_bivalve_peaks_navd88.js
+ *     -> incremental update from lastProcessedISO (with buffer) to now
+ *
+ *   node tools/update_bivalve_peaks_navd88.js --backfill-year=2000
+ *     -> backfill that year (UTC)
+ *
+ *   node tools/update_bivalve_peaks_navd88.js --backfill-from=2000 --backfill-to=2026
+ *     -> backfill a range of years [from, to) (UTC)
+ */
+
+const fs = require("fs");
+const path = require("path");
+
+const CACHE_PATH = path.join(__dirname, "..", "data", "bivalve_peaks_navd88.json");
+const SITE = "01412150";
+const PARAM = "72279";
+
+const PEAK_MIN_SEP_MINUTES = 300;
+const BUFFER_HOURS = 12;
+
+// polite pacing to avoid hammering USGS during backfill
+const SLEEP_MS_BETWEEN_CALLS = 250;
+
+function die(msg) { console.error(msg); process.exit(1); }
+
+function loadJSON(p) {
+  if (!fs.existsSync(p)) die(`Missing cache file: ${p}`);
+  return JSON.parse(fs.readFileSync(p, "utf8"));
 }
+function saveJSON(p, obj) {
+  fs.writeFileSync(p, JSON.stringify(obj, null, 2) + "\n", "utf8");
+}
+
+function isoNow() { return new Date().toISOString(); }
+function addHoursISO(iso, hours) {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + hours * 3600 * 1000).toISOString();
+}
+function clampISO(iso) {
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+function parseArg(name) {
+  const a = process.argv.find(x => x.startsWith(name + "="));
+  return a ? a.split("=").slice(1).join("=") : null;
+}
+function roundFt(x) { return Math.round(x * 1000) / 1000; }
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchUSGSIV({ startISO, endISO }) {
+  const url =
+    "https://waterservices.usgs.gov/nwis/iv/?" +
+    new URLSearchParams({
+      format: "json",
+      sites: SITE,
+      parameterCd: PARAM,
+      startDT: startISO,
+      endDT: endISO,
+      siteStatus: "all"
+    }).toString();
+
+  const res = await fetch(url, { headers: { "User-Agent": "bivalve-peaks-cache/1.0" } });
+  if (!res.ok) throw new Error(`USGS IV fetch failed: ${res.status} ${res.statusText}`);
+  const j = await res.json();
+
+  const ts = j?.value?.timeSeries?.[0];
+  const vals = ts?.values?.[0]?.value || [];
+  const series = vals
+    .map(v => ({ t: v.dateTime, ft: Number(v.value) }))
+    .filter(p => p.t && Number.isFinite(p.ft));
+
+  series.sort((a, b) => new Date(a.t) - new Date(b.t));
+  return series;
+}
+
+function extractFloodPeaks_NAVD(series, thresholdsNAVD88) {
+  if (!series || series.length < 3) return [];
+  const T = thresholdsNAVD88;
+
+  const pts = [...series]
+    .map(p => ({ t: p.t, ft: Number(p.ft) }))
+    .filter(p => p.t && Number.isFinite(p.ft))
+    .sort((a, b) => new Date(a.t) - new Date(b.t));
+  if (pts.length < 3) return [];
+
+  const candidates = [];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1], b = pts[i], c = pts[i + 1];
+    if (b.ft >= a.ft && b.ft >= c.ft) {
+      if (!(b.ft === a.ft && b.ft === c.ft)) candidates.push(b);
+    }
+  }
+  if (!candidates.length) return [];
+
+  const minSepMs = PEAK_MIN_SEP_MINUTES * 60 * 1000;
+  const kept = [];
+  let cur = candidates[0];
+
+  for (let i = 1; i < candidates.length; i++) {
+    const p = candidates[i];
+    const pt = new Date(p.t).getTime();
+    const ct = new Date(cur.t).getTime();
+    if (Number.isFinite(pt) && Number.isFinite(ct) && (pt - ct) <= minSepMs) {
+      if (p.ft > cur.ft) cur = p;
+    } else {
+      kept.push(cur);
+      cur = p;
+    }
+  }
+  kept.push(cur);
+
+  return kept.map(p => {
+    let type = "Below";
+    if (p.ft >= T.majorLow) type = "Major";
+    else if (p.ft >= T.moderateLow) type = "Moderate";
+    else if (p.ft >= T.minorLow) type = "Minor";
+    return { t: p.t, ft: p.ft, type };
+  });
+}
+
+function ensureThresholds(cache){
+  const T = cache?.thresholdsNAVD88;
+  const ok = T && ["minorLow","moderateLow","majorLow"].every(k => Number.isFinite(Number(T[k])));
+  if (!ok) die(
+    "Missing/invalid thresholdsNAVD88 in data/bivalve_peaks_navd88.json.\n" +
+    'Add: "thresholdsNAVD88": {"minorLow": X, "moderateLow": Y, "majorLow": Z}'
+  );
+  return { minorLow: Number(T.minorLow), moderateLow: Number(T.moderateLow), majorLow: Number(T.majorLow) };
+}
+
+function dedupeAppend(cache, newPeaks){
+  const existing = Array.isArray(cache.events) ? cache.events : [];
+  const seen = new Set(existing.map(e => `${e.t}|${roundFt(Number(e.ft))}`));
+
+  let added = 0;
+  for (const p of newPeaks) {
+    const k = `${p.t}|${roundFt(Number(p.ft))}`;
+    if (!seen.has(k)) {
+      existing.push(p);
+      seen.add(k);
+      added++;
+    }
+  }
+
+  existing.sort((a, b) => new Date(a.t) - new Date(b.t));
+  cache.events = existing;
+  return added;
+}
+
+async function processWindow(cache, startISO, endISO, THRESH_NAVD88){
+  const series = await fetchUSGSIV({ startISO, endISO });
+  if (!series.length) return { fetched: 0, peaks: 0, added: 0, newest: null };
+
+  const peaks = extractFloodPeaks_NAVD(series, THRESH_NAVD88)
+    .map(p => ({ t: new Date(p.t).toISOString(), ft: roundFt(p.ft), type: p.type }));
+
+  const added = dedupeAppend(cache, peaks);
+  const newestT = series[series.length - 1]?.t ? new Date(series[series.length - 1].t).toISOString() : null;
+
+  return { fetched: series.length, peaks: peaks.length, added, newest: newestT };
+}
+
+async function main() {
+  const cache = loadJSON(CACHE_PATH);
+  const THRESH_NAVD88 = ensureThresholds(cache);
+
+  const backfillYear = parseArg("--backfill-year");
+  const backfillFrom = parseArg("--backfill-from");
+  const backfillTo   = parseArg("--backfill-to");
+
+  if (backfillYear) {
+    const y = Number(backfillYear);
+    if (!Number.isFinite(y)) die("Invalid --backfill-year=YYYY");
+    const startISO = new Date(Date.UTC(y, 0, 1, 0, 0, 0)).toISOString();
+    const endISO   = new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0)).toISOString();
+    console.log(`Backfill year ${y}: ${startISO} → ${endISO}`);
+
+    const r = await processWindow(cache, startISO, endISO, THRESH_NAVD88);
+    if (r.newest) cache.lastProcessedISO = r.newest;
+    saveJSON(CACHE_PATH, cache);
+
+    console.log(`Fetched points: ${r.fetched}`);
+    console.log(`Peaks found:   ${r.peaks}`);
+    console.log(`Peaks added:   ${r.added}`);
+    console.log(`New lastProcessedISO: ${cache.lastProcessedISO}`);
+    return;
+  }
+
+  if (backfillFrom && backfillTo) {
+    const y0 = Number(backfillFrom);
+    const y1 = Number(backfillTo);
+    if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 <= y0) die("Invalid --backfill-from/to (use YYYY, and to > from)");
+
+    let totalFetched = 0, totalPeaks = 0, totalAdded = 0;
+
+    for (let y = y0; y < y1; y++) {
+      const startISO = new Date(Date.UTC(y, 0, 1, 0, 0, 0)).toISOString();
+      const endISO   = new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0)).toISOString();
+      console.log(`Backfill year ${y}: ${startISO} → ${endISO}`);
+
+      const r = await processWindow(cache, startISO, endISO, THRESH_NAVD88);
+      totalFetched += r.fetched;
+      totalPeaks   += r.peaks;
+      totalAdded   += r.added;
+
+      if (r.newest) cache.lastProcessedISO = r.newest;
+      saveJSON(CACHE_PATH, cache);
+
+      console.log(`  fetched=${r.fetched} peaks=${r.peaks} added=${r.added} last=${cache.lastProcessedISO}`);
+      await sleep(SLEEP_MS_BETWEEN_CALLS);
+    }
+
+    console.log(`DONE range ${y0}→${y1}`);
+    console.log(`Total fetched: ${totalFetched}`);
+    console.log(`Total peaks:   ${totalPeaks}`);
+    console.log(`Total added:   ${totalAdded}`);
+    console.log(`Final lastProcessedISO: ${cache.lastProcessedISO}`);
+    return;
+  }
+
+  // incremental mode
+  const last = clampISO(cache.lastProcessedISO || "2000-01-01T00:00:00Z");
+  if (!last) die("Cache lastProcessedISO is invalid ISO.");
+  const startISO = addHoursISO(last, -BUFFER_HOURS);
+  const endISO = isoNow();
+
+  console.log(`Incremental: ${startISO} → ${endISO}`);
+  const r = await processWindow(cache, startISO, endISO, THRESH_NAVD88);
+  if (r.newest) cache.lastProcessedISO = r.newest;
+  saveJSON(CACHE_PATH, cache);
+
+  console.log(`Fetched points: ${r.fetched}`);
+  console.log(`Peaks found:   ${r.peaks}`);
+  console.log(`Peaks added:   ${r.added}`);
+  console.log(`New lastProcessedISO: ${cache.lastProcessedISO}`);
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
