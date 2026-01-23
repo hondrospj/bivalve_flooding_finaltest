@@ -1261,23 +1261,37 @@ function countAnnualFloodsFromTXT(eventsNavd){
   return byYear;
 }
 
-function buildAnnualArraysFromTXT_completedYears(){
-  const {y:curYear}=getESTParts(new Date());
+function buildAnnualArraysFromHistory_completedYears(){
+  const T = THRESH.NAVD88;
 
-  if(!HIGH_TIDES_NAVD || !HIGH_TIDES_NAVD.length){
-    YEARS=[]; annualMinor=[]; annualModerate=[]; annualMajor=[];
-    return;
+  const yearCounts = new Map(); // y -> {minor, moderate, major}
+
+  for(const e of HIGH_TIDES_NAVD){
+    const tMs = new Date(e.t).getTime();
+    if(!Number.isFinite(tMs)) continue;
+
+    const y = new Date(e.t).getUTCFullYear();
+    const ft = +e.ft;
+    if(!Number.isFinite(ft)) continue;
+
+    if(!yearCounts.has(y)) yearCounts.set(y,{minor:0, moderate:0, major:0});
+
+    if(ft >= T.majorLow) yearCounts.get(y).major++;
+    else if(ft >= T.moderateLow) yearCounts.get(y).moderate++;
+    else if(ft >= T.minorLow) yearCounts.get(y).minor++;
   }
 
-  const byYear = countAnnualFloodsFromTXT(HIGH_TIDES_NAVD);
-  const years = Array.from(byYear.keys()).sort((a,b)=>a-b);
-  if(!years.includes(curYear)) years.push(curYear);
+  const yearsAll = Array.from(yearCounts.keys()).sort((a,b)=>a-b);
+  const curYear = new Date().getFullYear();
+  const yearsCompleted = yearsAll.filter(y => y < curYear);
 
-  YEARS = years;
-  annualMinor = YEARS.map(y=> byYear.get(y)?.minor ?? 0);
-  annualModerate = YEARS.map(y=> byYear.get(y)?.moderate ?? 0);
-  annualMajor = YEARS.map(y=> byYear.get(y)?.major ?? 0);
+  YEARS = yearsCompleted;
+  annualMinor = yearsCompleted.map(y => yearCounts.get(y)?.minor ?? 0);
+  annualModerate = yearsCompleted.map(y => yearCounts.get(y)?.moderate ?? 0);
+  annualMajor = yearsCompleted.map(y => yearCounts.get(y)?.major ?? 0);
 }
+
+
 
 function overwriteCurrentYearBarWithLiveCounts(liveCounts){
   if(!liveCounts) return;
@@ -1719,25 +1733,29 @@ function renderMonthAveragesChart(monthStats){
   monthAvgChart.update();
 }
 
-function updateMonthAveragesFromTXT(){
+function updateMonthAveragesFromHistory(){
   if(!HIGH_TIDES_NAVD.length){
-   monthAvgMeta.textContent = "";
-    const zeros = Array.from({length:12},(_,i)=>({month:i+1,avgTotal:0,avgMinor:0,avgModerate:0,avgMajor:0,years:0}));
+    monthAvgMeta.textContent = "";
+    const zeros = Array.from({length:12},(_,i)=>({
+      month:i+1, avgTotal:0, avgMinor:0, avgModerate:0, avgMajor:0, years:0
+    }));
     renderMonthAveragesTable(zeros);
     renderMonthAveragesChart(zeros);
     return;
   }
- const stats = computeMonthlyAveragesFromEvents(HIGH_TIDES_NAVD);
-monthAvgMeta.textContent = "";
-renderMonthAveragesTable(stats);
-renderMonthAveragesChart(stats);
+
+  const stats = computeMonthlyAveragesFromEvents(HIGH_TIDES_NAVD);
+  monthAvgMeta.textContent = "";
+  renderMonthAveragesTable(stats);
+  renderMonthAveragesChart(stats);
 }
+
 
 /* =========================
 LIVE: current conditions + daily range + overwrite current year bar
 ========================= */
 async function updateLiveAndAnnualCounts(){
-  buildAnnualArraysFromTXT_completedYears();
+  buildAnnualArraysFromHistory_completedYears();
   renderAnnual();
 
   const {y:curYear}=getESTParts(new Date());
@@ -1771,7 +1789,6 @@ async function updateLiveAndAnnualCounts(){
   }
 
   const counts = countFloodPeaks_NAVD(ytd);
-  overwriteCurrentYearBarWithLiveCounts(counts);
   renderAnnual();
 }
 
@@ -1809,19 +1826,97 @@ async function updateTimeseries(){
   updateTsChartFromState();
 }
 
-
 /* =========================
-Init TXT-backed history
+JSON-BACKED HISTORY (NAVD88 PEAKS)
 ========================= */
+
+const PEAKS_JSON_FILE = "bivalve_peaks_navd88.json";
+const PEAKS_JSON_PATH_CANDIDATES = [
+  `data/${PEAKS_JSON_FILE}`,
+  `./data/${PEAKS_JSON_FILE}`,
+  `../data/${PEAKS_JSON_FILE}`,
+  `/data/${PEAKS_JSON_FILE}`
+];
+
+let PEAKS_JSON_URL = PEAKS_JSON_PATH_CANDIDATES[0];
+
+async function resolvePeaksJsonUrl(){
+  const errs = [];
+  for(const u of PEAKS_JSON_PATH_CANDIDATES){
+    try{
+      const res = await fetch(`${u}?v=${Date.now()}`, { cache:"no-store" });
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      PEAKS_JSON_URL = u;
+      return { url:u, json };
+    }catch(e){
+      errs.push(`${u} (${e?.message || e})`);
+    }
+  }
+  throw new Error("Could not load peaks JSON. Tried: " + errs.join(" | "));
+}
+
+function normalizePeaksJson(json){
+  // Supports either:
+  //  A) [ {t, ft, ...}, ... ]
+  //  B) { peaks:[{t, ft, ...}, ...] }
+  //  C) { data:[{t, ft, ...}, ...] }
+  const arr =
+    Array.isArray(json) ? json :
+    Array.isArray(json?.peaks) ? json.peaks :
+    Array.isArray(json?.data) ? json.data :
+    [];
+
+  const out = [];
+  for(const r of arr){
+    const t  = r?.t ?? r?.time ?? r?.timestamp ?? r?.datetime ?? r?.dateTime ?? null;
+    const ft = r?.ft ?? r?.value ?? r?.height ?? r?.navd88 ?? r?.navd ?? null;
+
+    if(!t || !Number.isFinite(+ft)) continue;
+
+    out.push({
+      t: new Date(t).toISOString(),
+      ft: +ft,
+      y: r?.y ?? r?.year ?? null,
+      m: r?.m ?? r?.month ?? null,
+      d: r?.d ?? r?.day ?? null,
+      kind: r?.kind ?? r?.type ?? "Peak",
+      source: "JSON"
+    });
+  }
+  return out;
+}
+
+async function initJSONBackedHistory(){
+  const { json } = await resolvePeaksJsonUrl();
+  const peaks = normalizePeaksJson(json);
+
+  HIGH_TIDES_NAVD = peaks.sort((a,b)=>new Date(b.t)-new Date(a.t));
+
+  // Refresh the features that rely on HIGH_TIDES_NAVD
+  applyFilter(); // historic flooding filter
+  updateMonthAveragesFromHistory(); // avg floods per month
+  buildAnnualArraysFromHistory_completedYears(); // flooding over the years
+  renderAnnual();
+
+  // If you have legacy meta notes, clear them
+  if(typeof histMeta !== "undefined" && histMeta) histMeta.textContent = "";
+  if(typeof monthAvgMeta !== "undefined" && monthAvgMeta) monthAvgMeta.textContent = "";
+}
+
 async function initTXTBackedHistory(){
   await loadDailyTidesFromTXT();
-  await hydrateHistoricFromTXT();          // ✅ await now
-  updateMonthAveragesFromTXT();
-  buildAnnualArraysFromTXT_completedYears();
+  await hydrateHistoricFromTXT();
+  updateMonthAveragesFromHistory();
+  buildAnnualArraysFromHistory_completedYears();
   renderAnnual();
 }
 
 
+
+/* =========================
+Boot
+========================= */
 /* =========================
 Boot
 ========================= */
@@ -1831,19 +1926,19 @@ async function boot(){
 
   const results = await Promise.allSettled([
     updateAlerts(),
-    initTXTBackedHistory(),
+    initJSONBackedHistory(),     // or initTXTBackedHistory()
     updateLiveAndAnnualCounts(),
     updateTimeseries()
   ]);
 
+  // History init (JSON or TXT)
   if(results[1].status==="rejected"){
-    console.error("TXT init failed:", results[1].reason);
-    histMeta.textContent =
-      "TXT load failed. Ensure file is committed at data/bivalve_daily_stats.txt (case-sensitive). See TXT status line.";
-    monthAvgMeta.textContent =
-      "TXT load failed (monthly averages unavailable). See TXT status line.";
+    console.error("History init failed:", results[1].reason);
+    histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json (or TXT file if using TXT init).";
+    monthAvgMeta.textContent = "History load failed (monthly averages unavailable).";
   }
 
+  // Live init
   if(results[2].status==="rejected"){
     console.error("Live init failed:", results[2].reason);
     stageTextEl.textContent="LIVE DATA UNAVAILABLE";
@@ -1852,6 +1947,7 @@ async function boot(){
     curMetaEl.textContent="Updated: —";
   }
 }
+
 
 /* =========================
 Controls
@@ -1904,7 +2000,7 @@ datumBtn.addEventListener("click", ()=>{
   updateUnitsAndBadges();
   renderTopTen();
   applyFilter();
-  updateMonthAveragesFromTXT();
+  updateMonthAveragesFromHistory();
   renderAnnual();
 
   // refresh live cards (stored internally as NAVD or MLLW where noted)
@@ -1945,6 +2041,8 @@ setInterval(async ()=>{
     console.error(e);
   }
 }, 5*60*1000);
+
+    
 
     </script>
 </body>
