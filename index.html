@@ -612,7 +612,7 @@ const LIVE_START_ISO = "2026-01-01T00:00:00Z"; // use >= Jan 1 2026
 const ALERT_POINT={lat:39.2325, lon:-75.0380};
 
 /* TXT daily tides file */
-const DAILY_TIDES_TXT_FILE = "bivalve_daily_stats.txt";
+const DAILY_TIDES_TXT_FILE = "data/bivalve_peaks_navd88.json";
 const TXT_PATH_CANDIDATES = [
   `data/${DAILY_TIDES_TXT_FILE}`,
   `./data/${DAILY_TIDES_TXT_FILE}`,
@@ -2072,7 +2072,7 @@ async function boot(){
   if(results[1].status==="rejected"){
     console.error("TXT init failed:", results[1].reason);
     histMeta.textContent =
-      "TXT load failed. Ensure file is committed at data/bivalve_daily_stats.txt (case-sensitive). See TXT status line.";
+      "TXT load failed. Ensure file is committed at data/data/bivalve_peaks_navd88.json (case-sensitive). See TXT status line.";
     monthAvgMeta.textContent =
       "TXT load failed (monthly averages unavailable). See TXT status line.";
   }
