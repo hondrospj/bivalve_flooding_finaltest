@@ -778,6 +778,7 @@ function updateUnitsAndBadges(){
   topTenUnitTh.textContent = "Height (" + unitText() + ")";
   histUnitTh.textContent = "Peak (" + unitText() + ")";
 
+  // stage badges update based on current DISPLAY_DATUM
   const T = THRESH[DISPLAY_DATUM];
   minorBadge.textContent = `${T.minorLow.toFixed(2)}–${T.moderateLow.toFixed(2)}`;
   moderateBadge.textContent = `${T.moderateLow.toFixed(2)}–${T.majorLow.toFixed(2)}`;
@@ -788,6 +789,7 @@ function updateUnitsAndBadges(){
     btn.classList.toggle("active", btn.dataset.datum === DISPLAY_DATUM);
   });
 }
+
 
 
   const T = THRESH[DISPLAY_DATUM];
@@ -808,6 +810,19 @@ function setTXTStatus(msg){ if(txtNote) txtNote.textContent = msg || ""; }
   const T = THRESH[DISPLAY_DATUM];
   return { minor:T.minorLow, moderate:T.moderateLow, major:T.majorLow };
 }
+      function stageColorForDisplayFt(ftDisplay){
+  const T = THRESH[DISPLAY_DATUM];
+  if(ftDisplay >= T.majorLow) return "var(--major)";
+  if(ftDisplay >= T.moderateLow) return "var(--moderate)";
+  if(ftDisplay >= T.minorLow) return "var(--minor)";
+  return "var(--text)"; // below flood stage = white
+}
+
+function paintValue(el, ftDisplay){
+  if(!el) return;
+  el.style.color = Number.isFinite(ftDisplay) ? stageColorForDisplayFt(ftDisplay) : "var(--text)";
+}
+
 function updatePred24RangeCard(){
   const maxEl = document.getElementById("pred24MaxFt");
   const minEl = document.getElementById("pred24MinFt");
@@ -1930,36 +1945,54 @@ async function updateLiveAndAnnualCounts(){
   buildAnnualArraysFromTXT_completedYears();
   renderAnnual();
 
-  const {y:curYear}=getESTParts(new Date());
+  const { y: curYear } = getESTParts(new Date());
   const startISO = startOfYearEST_ISO(curYear);
   const endISO = nowISO();
 
-  const ytd = await fetchObservedSeries({startISO, endISO});
+  const ytd = await fetchObservedSeries({ startISO, endISO });
   if(!ytd.length) throw new Error("no live water-level data returned from USGS");
 
   STATE.ytdNavd = ytd;
-  STATE.lastNavd = ytd[ytd.length-1];
+  STATE.lastNavd = ytd[ytd.length - 1];
 
+  // ---- Current (LIVE) ----
   const curDisp = toDisplayFtFromNavd(STATE.lastNavd.ft);
   curFtEl.textContent = curDisp.toFixed(2);
+  paintValue(curFtEl, curDisp);
+
   curMetaEl.textContent = "Updated: " + fmtESTFull(STATE.lastNavd.t);
   lastPill.textContent = "Last updated: " + fmtESTFull(STATE.lastNavd.t);
 
+  // header stage pill (driven by NAVD thresholds, which is correct)
   setStage(STATE.lastNavd.ft);
 
+  // ---- Today range ----
   const today = sliceAfter(ytd, startOfTodayEST_ISO());
   STATE.todayNavd = today;
+
   if(today.length){
-    const dmx=maxPoint(today), dmn=minPoint(today);
-    dayMaxFtEl.textContent = toDisplayFtFromNavd(dmx.ft).toFixed(2);
-    dayMinFtEl.textContent = toDisplayFtFromNavd(dmn.ft).toFixed(2);
+    const dmx = maxPoint(today);
+    const dmn = minPoint(today);
+
+    const dayMaxDisp = toDisplayFtFromNavd(dmx.ft);
+    const dayMinDisp = toDisplayFtFromNavd(dmn.ft);
+
+    dayMaxFtEl.textContent = dayMaxDisp.toFixed(2);
+    paintValue(dayMaxFtEl, dayMaxDisp);
+
+    dayMinFtEl.textContent = dayMinDisp.toFixed(2);
+    paintValue(dayMinFtEl, dayMinDisp);
+
     dayRangeMeta.textContent = `Max @ ${fmtESTFull(dmx.t)} · Min @ ${fmtESTFull(dmn.t)}`;
   }else{
-    dayMaxFtEl.textContent="—";
-    dayMinFtEl.textContent="—";
-    dayRangeMeta.textContent="—";
+    dayMaxFtEl.textContent = "—";
+    dayMinFtEl.textContent = "—";
+    paintValue(dayMaxFtEl, NaN);
+    paintValue(dayMinFtEl, NaN);
+    dayRangeMeta.textContent = "—";
   }
 
+  // ---- Annual (live overwrite) ----
   const counts = countFloodPeaks_NAVD(ytd);
   overwriteCurrentYearBarWithLiveCounts(counts);
   renderAnnual();
@@ -2056,7 +2089,6 @@ $("resetBtn").addEventListener("click", ()=>{
   sortModeEl.value = "desc";
   applyFilter();
 });
-
 function setDatum(newDatum){
   if(!newDatum || newDatum === DISPLAY_DATUM) return;
 
@@ -2101,35 +2133,41 @@ function setDatum(newDatum){
   updateMonthAveragesFromTXT();
   renderAnnual();
 
-  // refresh live cards
+  // refresh live cards + REPAINT colors
   if(STATE.lastNavd){
-    curFtEl.textContent = toDisplayFtFromNavd(STATE.lastNavd.ft).toFixed(2);
+    const curDisp = toDisplayFtFromNavd(STATE.lastNavd.ft);
+    curFtEl.textContent = curDisp.toFixed(2);
+    paintValue(curFtEl, curDisp);
     setStage(STATE.lastNavd.ft);
   }
 
   if(STATE.todayNavd && STATE.todayNavd.length){
     const dmx = maxPoint(STATE.todayNavd);
     const dmn = minPoint(STATE.todayNavd);
-    dayMaxFtEl.textContent = toDisplayFtFromNavd(dmx.ft).toFixed(2);
-    dayMinFtEl.textContent = toDisplayFtFromNavd(dmn.ft).toFixed(2);
+
+    const dayMaxDisp = toDisplayFtFromNavd(dmx.ft);
+    const dayMinDisp = toDisplayFtFromNavd(dmn.ft);
+
+    dayMaxFtEl.textContent = dayMaxDisp.toFixed(2);
+    paintValue(dayMaxFtEl, dayMaxDisp);
+
+    dayMinFtEl.textContent = dayMinDisp.toFixed(2);
+    paintValue(dayMinFtEl, dayMinDisp);
   } else {
     dayMaxFtEl.textContent = "—";
     dayMinFtEl.textContent = "—";
+    paintValue(dayMaxFtEl, NaN);
+    paintValue(dayMinFtEl, NaN);
   }
 
   updatePred24RangeCard();
   updateTsChartFromState();
 
-  // set active state on the toggle UI (if you used .datumBtn)
+  // reflect toggle UI state
   document.querySelectorAll(".datumBtn").forEach(btn=>{
     btn.classList.toggle("active", btn.dataset.datum === DISPLAY_DATUM);
   });
 }
-
-// Wire up the two-sided toggle buttons
-document.querySelectorAll(".datumBtn").forEach(btn=>{
-  btn.addEventListener("click", ()=> setDatum(btn.dataset.datum));
-});
 
 /* Start */
 boot().catch(err=>{
