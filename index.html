@@ -1857,10 +1857,6 @@ async function resolvePeaksJsonUrl(){
 }
 
 function normalizePeaksJson(json){
-  // Supports either:
-  //  A) [ {t, ft, ...}, ... ]
-  //  B) { peaks:[{t, ft, ...}, ...] }
-  //  C) { data:[{t, ft, ...}, ...] }
   const arr =
     Array.isArray(json) ? json :
     Array.isArray(json?.peaks) ? json.peaks :
@@ -1868,22 +1864,38 @@ function normalizePeaksJson(json){
     [];
 
   const out = [];
-  for(const r of arr){
-    const t  = r?.t ?? r?.time ?? r?.timestamp ?? r?.datetime ?? r?.dateTime ?? null;
-    const ft = r?.ft ?? r?.value ?? r?.height ?? r?.navd88 ?? r?.navd ?? null;
 
-    if(!t || !Number.isFinite(+ft)) continue;
+  for(const r of arr){
+    const tRaw =
+      r?.t ?? r?.time ?? r?.timestamp ?? r?.datetime ?? r?.dateTime ??
+      r?.validTime ?? r?.valid_time ?? r?.date ?? r?.dt ?? null;
+
+    const ftRaw =
+      r?.ft ?? r?.value ?? r?.height ?? r?.navd88 ?? r?.navd ??
+      r?.primary ?? r?.stage ?? r?.peak ?? null;
+
+    if(!tRaw) continue;
+
+    const dt = new Date(tRaw);
+    if(Number.isNaN(dt.getTime())) continue; // prevents toISOString crash
+
+    const ft = Number(ftRaw);
+    if(!Number.isFinite(ft)) continue;
+
+    // optional: derive y/m/d if missing (used by monthly stats)
+    const y = r?.y ?? r?.year ?? dt.getUTCFullYear();
+    const m = r?.m ?? r?.month ?? (dt.getUTCMonth()+1);
+    const d = r?.d ?? r?.day ?? dt.getUTCDate();
 
     out.push({
-      t: new Date(t).toISOString(),
-      ft: +ft,
-      y: r?.y ?? r?.year ?? null,
-      m: r?.m ?? r?.month ?? null,
-      d: r?.d ?? r?.day ?? null,
+      t: dt.toISOString(),
+      ft,
+      y, m, d,
       kind: r?.kind ?? r?.type ?? "Peak",
       source: "JSON"
     });
   }
+
   return out;
 }
 
