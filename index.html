@@ -659,6 +659,16 @@ const stageDotEl = $("stageDot");
 // Datum toggle (NEW: supports 1 or many buttons with class="datumBtn")
 const datumButtons = document.querySelectorAll(".datumBtn");
 
+// Wire up datum toggle buttons
+datumButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const newDatum = btn.dataset.datum;
+    setDatum(newDatum);
+  });
+});
+
+
+
 // Alerts
 const alertBanner = $("alertBanner");
 const alertTitle = $("alertTitle");
