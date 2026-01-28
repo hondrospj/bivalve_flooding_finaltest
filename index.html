@@ -1190,25 +1190,112 @@ function extractFloodPeaks_NAVD(series){
 STEP 3 — build live flood peak events since Jan 1 2026
 These are NAVD88 peaks from USGS 15-min data (same datum as your TXT events)
 ========================= */
-async function buildLiveFloodPeaksSince2026(){
-  // Pull from Jan 1 2026 -> now (NAVD88, param 72279)
-  const startISO = LIVE_START_ISO;
-  const endISO = nowISO();
+async function fetchNOAAHiloHighs({ station, beginYMD, endYMD, datum="MLLW" }){
+  const url = new URL("https://api.tidesandcurrents.noaa.gov/api/prod/datagetter");
+  url.searchParams.set("product","predictions");
+  url.searchParams.set("application", COOPS_APP || "web");
+  url.searchParams.set("begin_date", beginYMD); // YYYYMMDD
+  url.searchParams.set("end_date", endYMD);     // YYYYMMDD
+  url.searchParams.set("datum", datum);
+  url.searchParams.set("station", station);
+  url.searchParams.set("time_zone","gmt");
+  url.searchParams.set("units","english");
+  url.searchParams.set("interval","hilo");
+  url.searchParams.set("format","json");
 
-  const series = await fetchObservedSeries({ startISO, endISO });
-  if(!series || !series.length) return [];
+  const res = await fetch(url.toString(), { cache:"no-store" });
+  if(!res.ok) throw new Error("NOAA hilo predictions failed " + res.status);
+  const j = await res.json();
 
-  // Extract individual peak events (NAVD88)
-  const peaks = extractFloodPeaks_NAVD(series); // [{t, ft, type}]
-  // Normalize into the same shape your filter table expects (and your monthly/yearly code can use)
-  return peaks.map(p => ({
-    t: p.t,             // ISO
-    ft: p.ft,           // NAVD88 feet
-    kind: "LivePeak",   // just a label; not used for logic
-    source: "USGS",
-    type: p.type        // Minor/Moderate/Major (optional; nice for debugging)
-  }));
+  const preds = j?.predictions || [];
+  return preds
+    .filter(p => String(p.type || "").toUpperCase() === "H")
+    .map(p => ({
+      t: new Date(String(p.t).replace(" ", "T") + "Z").toISOString(), // GMT -> ISO
+      ft: Number(p.v)
+    }))
+    .filter(p => p.t && Number.isFinite(p.ft))
+    .sort((a,b)=> new Date(a.t) - new Date(b.t));
 }
+
+function ymdCompactFromISO(iso){
+  const d = new Date(iso);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth()+1).padStart(2,"0");
+  const da = String(d.getUTCDate()).padStart(2,"0");
+  return `${y}${m}${da}`;
+}
+
+async function buildLiveFloodPeaksSince2026(){
+  const startISO = LIVE_START_ISO;
+  const endISO   = nowISO();
+
+  // observed NAVD88 (15-min)
+  const obs = await fetchObservedSeries({ startISO, endISO });
+  if(!obs || !obs.length) return [];
+
+  const obsPts = obs
+    .map(p => ({ tMs: new Date(p.t).getTime(), ft: Number(p.ft), t: p.t }))
+    .filter(p => Number.isFinite(p.tMs) && Number.isFinite(p.ft))
+    .sort((a,b)=>a.tMs-b.tMs);
+
+  // predicted HIGH tide times (NOAA hilo)
+  const highs = await fetchNOAAHiloHighs({
+    station: NOAA_STATION_TIDECLOCK,
+    beginYMD: ymdCompactFromISO(startISO),
+    endYMD: ymdCompactFromISO(endISO),
+    datum: "MLLW"
+  });
+
+  const winMs = CREST_WINDOW_HOURS * 3600 * 1000;    // ±2h search window
+  const reqMs = REQUIRE_WITHIN_HOURS * 3600 * 1000;  // must have obs within ±1h
+
+  function bestObsNear(centerMs){
+    const lo = centerMs - winMs;
+    const hi = centerMs + winMs;
+
+    let best = null;
+    let haveReq = false;
+
+    for(const p of obsPts){
+      if(p.tMs < lo) continue;
+      if(p.tMs > hi) break;
+
+      if(Math.abs(p.tMs - centerMs) <= reqMs) haveReq = true;
+      if(best === null || p.ft > best.ft) best = p;
+    }
+
+    if(!best || !haveReq) return null;
+    return best;
+  }
+
+  const out = [];
+  for(const h of highs){
+    const cMs = new Date(h.t).getTime();
+    if(!Number.isFinite(cMs)) continue;
+
+    const best = bestObsNear(cMs);
+    if(!best) continue;
+
+    out.push({
+      t: best.t,          // observed timestamp
+      ft: best.ft,        // NAVD88
+      kind: "LiveHigh",   // label only
+      source: "USGS+NOAA",
+      type: classifyByNavd(best.ft).short  // optional
+    });
+  }
+
+  // de-dupe
+  const seen = new Set();
+  return out.filter(e=>{
+    const k = `${e.t}|${Number(e.ft).toFixed(3)}`;
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 
 
 /* Peak counting uses NAVD thresholds */
