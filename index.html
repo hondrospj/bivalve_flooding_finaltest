@@ -439,6 +439,12 @@ const COOPS_DATUM="MLLW";
 const COOPS_INTERVAL="6";
 const COOPS_TZ="gmt";
 
+      /* Tide-clock settings for crest-anchored highs (NOAA hilo predictions) */
+const NOAA_STATION_TIDECLOCK = "8535055"; // same station as COOPS_STATION (Bivalve)
+const CREST_WINDOW_HOURS = 2;             // search max within ±2 hours of predicted crest
+const REQUIRE_WITHIN_HOURS = 1;           // must have at least one obs point within ±1 hour
+
+
 /* Flood thresholds */
 const THRESH = {
   MLLW: { minorLow:7.60, moderateLow:8.60, majorLow:9.60 },
@@ -1295,13 +1301,26 @@ function buildAnnualArraysFromHistory_completedYears(){
 
 function overwriteCurrentYearBarWithLiveCounts(liveCounts){
   if(!liveCounts) return;
-  const {y:curYear}=getESTParts(new Date());
-  const idx = YEARS.indexOf(curYear);
-  if(idx < 0) return;
+  const { y: curYear } = getESTParts(new Date());
+
+  let idx = YEARS.indexOf(curYear);
+  if(idx < 0){
+    // If the annual arrays were built as "completed years only", append current year.
+    YEARS.push(curYear);
+    annualMinor.push(0);
+    annualModerate.push(0);
+    annualMajor.push(0);
+    idx = YEARS.length - 1;
+
+    // Keep labels sorted if you want strict order:
+    // (If you sort, you must reorder the arrays too; simplest is to not sort here.)
+  }
+
   annualMinor[idx] = liveCounts.minor;
   annualModerate[idx] = liveCounts.moderate;
   annualMajor[idx] = liveCounts.major;
 }
+
 
 /* Annual chart */
 function ensureAnnual(){
@@ -1755,30 +1774,33 @@ function updateMonthAveragesFromHistory(){
 LIVE: current conditions + daily range + overwrite current year bar
 ========================= */
 async function updateLiveAndAnnualCounts(){
+  // Build completed-year bars from whatever history is currently loaded
   buildAnnualArraysFromHistory_completedYears();
   renderAnnual();
 
-  const {y:curYear}=getESTParts(new Date());
+  // ---- Live observed series YTD (NAVD88) ----
+  const { y: curYear } = getESTParts(new Date());
   const startISO = startOfYearEST_ISO(curYear);
-  const endISO = nowISO();
+  const endISO   = nowISO();
 
-  const ytd = await fetchObservedSeries({startISO, endISO});
+  const ytd = await fetchObservedSeries({ startISO, endISO });
   if(!ytd.length) throw new Error("no live water-level data returned from USGS");
 
-  STATE.ytdNavd = ytd;
-  STATE.lastNavd = ytd[ytd.length-1];
+  STATE.ytdNavd  = ytd;
+  STATE.lastNavd = ytd[ytd.length - 1];
 
-  const curDisp = toDisplayFtFromNavd(STATE.lastNavd.ft);
-  curFtEl.textContent = curDisp.toFixed(2);
+  // ---- Current water level card ----
+  curFtEl.textContent = toDisplayFtFromNavd(STATE.lastNavd.ft).toFixed(2);
   curMetaEl.textContent = "Updated: " + fmtESTFull(STATE.lastNavd.t);
-  lastPill.textContent = "Last updated: " + fmtESTFull(STATE.lastNavd.t);
-
+  lastPill.textContent  = "Last updated: " + fmtESTFull(STATE.lastNavd.t);
   setStage(STATE.lastNavd.ft);
 
+  // ---- Daily range (today) ----
   const today = sliceAfter(ytd, startOfTodayEST_ISO());
   STATE.todayNavd = today;
+
   if(today.length){
-    const dmx=maxPoint(today), dmn=minPoint(today);
+    const dmx = maxPoint(today), dmn = minPoint(today);
     dayMaxFtEl.textContent = toDisplayFtFromNavd(dmx.ft).toFixed(2);
     dayMinFtEl.textContent = toDisplayFtFromNavd(dmn.ft).toFixed(2);
     dayRangeMeta.textContent = `Max @ ${fmtESTFull(dmx.t)} · Min @ ${fmtESTFull(dmn.t)}`;
@@ -1788,9 +1810,13 @@ async function updateLiveAndAnnualCounts(){
     dayRangeMeta.textContent="—";
   }
 
-  const counts = countFloodPeaks_NAVD(ytd);
+  // ---- Current-year flooding bar: history-based (peaks list) ----
+  // NOTE: requires HIGH_TIDES_NAVD already loaded (JSON/TXT init)
+  const counts = countEventsFromHistoryForYear(curYear);
+  overwriteCurrentYearBarWithLiveCounts(counts);
   renderAnnual();
 }
+
 
 /* =========================
 Timeseries update (observed + predictions)
@@ -1895,20 +1921,40 @@ function normalizePeaksJson(json){
 
 async function initJSONBackedHistory(){
   const { json } = await resolvePeaksJsonUrl();
-  const peaks = normalizePeaksJson(json);
+  const peaks = normalizePeaksJson(json); // historical peak events (NAVD88)
 
-  HIGH_TIDES_NAVD = peaks.sort((a,b)=>new Date(b.t)-new Date(a.t));
+  // ---- Append live peaks since Jan 1 2026 (NAVD88) ----
+  let livePeaks = [];
+  try{
+    livePeaks = await buildLiveFloodPeaksSince2026();
+  }catch(e){
+    console.error("Live peaks build failed:", e);
+    livePeaks = [];
+  }
 
-  // Refresh the features that rely on HIGH_TIDES_NAVD
-  applyFilter(); // historic flooding filter
-  updateMonthAveragesFromHistory(); // avg floods per month
-  buildAnnualArraysFromHistory_completedYears(); // flooding over the years
+  // Combine + de-dupe (timestamp + height)
+  const combined = [...peaks, ...livePeaks];
+  const seen = new Set();
+  HIGH_TIDES_NAVD = combined.filter(r=>{
+    const key = `${r.t}|${Number(r.ft).toFixed(3)}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Sort newest first
+  HIGH_TIDES_NAVD.sort((a,b)=>new Date(b.t)-new Date(a.t));
+
+  // Refresh UI that depends on HIGH_TIDES_NAVD
+  applyFilter();
+  updateMonthAveragesFromHistory();
+  buildAnnualArraysFromHistory_completedYears();
   renderAnnual();
 
-  // If you have legacy meta notes, clear them
-  if(typeof histMeta !== "undefined" && histMeta) histMeta.textContent = "";
-  if(typeof monthAvgMeta !== "undefined" && monthAvgMeta) monthAvgMeta.textContent = "";
+  if(histMeta) histMeta.textContent = "";
+  if(monthAvgMeta) monthAvgMeta.textContent = "";
 }
+
 
 async function initTXTBackedHistory(){
   await loadDailyTidesFromTXT();
@@ -1917,6 +1963,29 @@ async function initTXTBackedHistory(){
   buildAnnualArraysFromHistory_completedYears();
   renderAnnual();
 }
+
+      function countEventsFromHistoryForYear(year){
+  const T = THRESH.NAVD88;
+  let minor=0, moderate=0, major=0;
+
+  for(const e of (HIGH_TIDES_NAVD || [])){
+    const tMs = new Date(e.t).getTime();
+    if(!Number.isFinite(tMs)) continue;
+
+    // Use EST year consistency (your UI logic is EST-based)
+    const { y } = getESTParts(new Date(e.t));
+    if(y !== year) continue;
+
+    const ft = +e.ft;
+    if(!Number.isFinite(ft)) continue;
+
+    if(ft >= T.majorLow) major++;
+    else if(ft >= T.moderateLow) moderate++;
+    else if(ft >= T.minorLow) minor++;
+  }
+  return { minor, moderate, major };
+}
+
 
 
 
@@ -1930,28 +1999,29 @@ async function boot(){
   updateUnitsAndBadges();
   renderTopTen();
 
-  const results = await Promise.allSettled([
-    updateAlerts(),
-    initJSONBackedHistory(),     // or initTXTBackedHistory()
-    updateLiveAndAnnualCounts(),
-    updateTimeseries()
-  ]);
+  // Alerts can run independently
+  await Promise.allSettled([ updateAlerts() ]);
 
-  // History init (JSON or TXT)
-  if(results[1].status==="rejected"){
-    console.error("History init failed:", results[1].reason);
-    histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json (or TXT file if using TXT init).";
+  // 1) Must load history first (HIGH_TIDES_NAVD)
+  const hist = await Promise.allSettled([ initJSONBackedHistory() /* or initTXTBackedHistory() */ ]);
+  if(hist[0].status === "rejected"){
+    console.error("History init failed:", hist[0].reason);
+    histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json.";
     monthAvgMeta.textContent = "History load failed (monthly averages unavailable).";
   }
 
-  // Live init
-  if(results[2].status==="rejected"){
-    console.error("Live init failed:", results[2].reason);
+  // 2) Live counts rely on history for current-year bar overwrite
+  const live = await Promise.allSettled([ updateLiveAndAnnualCounts() ]);
+  if(live[0].status === "rejected"){
+    console.error("Live init failed:", live[0].reason);
     stageTextEl.textContent="LIVE DATA UNAVAILABLE";
     lastPill.textContent="Last updated: —";
     curFtEl.textContent="—";
     curMetaEl.textContent="Updated: —";
   }
+
+  // 3) Timeseries does not depend on history
+  await Promise.allSettled([ updateTimeseries() ]);
 }
 
 
