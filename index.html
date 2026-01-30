@@ -1917,45 +1917,54 @@ function renderDOYCumPanel(){
 
   const { years, avg, min, max, stageLabel } = DOY_CACHE;
 
+  const { y: CUR_Y } = getESTParts(new Date());
+  const ytd = buildYTDSeriesFromDailyRows();
+
   if(meta){
     meta.textContent = `${years[0]}–${years[years.length-1]} · ${stageLabel}`;
   }
   if(note){
-    note.textContent =
-    ''
+    note.textContent = "";
   }
 
   const labels  = Array.from({length:365}, (_,i)=> i+1);
   const mStarts = monthStarts365();
   const mNames  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-   const ytd = buildYTDSeriesFromDailyRows();
-
   const data = {
     labels,
     datasets: [
-      { label:"Min", data:min, borderWidth:0, pointRadius:0, hidden:true },
-
+      // helper for band fill (NOT shown in legend)
       {
-        label:"Min–Max range",
-        data:max,
-        borderWidth:0,
-        pointRadius:0,
-        fill:"-1",
-        backgroundColor:"rgba(255,255,255,0.18)"
-      },
-      {
-        label:"Average",
-        data:avg,
-        borderWidth:2,
-        pointRadius:0,
-        tension:0.25,
-        borderColor:"rgba(45,212,191,.95)"
+        label: "_rangeMin",
+        data: min,
+        borderWidth: 0,
+        pointRadius: 0,
+        showLine: false
       },
 
-      // ✅ NEW: Year-to-date line (current year)
+      // ✅ band legend item — should be visible + checked by default
       {
-        label:"Year-to-date",
+        label: "Historic range (min–max)",
+        data: max,
+        borderWidth: 0,
+        pointRadius: 0,
+        fill: "-1",
+        backgroundColor: "rgba(255,255,255,0.18)"
+      },
+
+      {
+        label: "Average",
+        data: avg,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.25,
+        borderColor: "rgba(45,212,191,.95)"
+      },
+
+      // ✅ YTD line labeled as the actual current year (2026, 2027, ...)
+      {
+        label: String(CUR_Y),
         data: ytd || new Array(365).fill(null),
         borderWidth: 3,
         pointRadius: 0,
@@ -1967,33 +1976,42 @@ function renderDOYCumPanel(){
     ]
   };
 
-
   const options = {
     responsive:true,
     maintainAspectRatio:false,
     interaction:{mode:"index", intersect:false},
     plugins:{
-      legend:{
+      legend: { // ✅ spelled correctly
         position:"bottom",
-        labels:{color:"rgba(234,240,255,.88)",font:{weight:"950"},boxWidth:14}
+        labels:{
+          color:"rgba(234,240,255,.88)",
+          font:{weight:"950"},
+          boxWidth:14,
+          filter:(legendItem, data)=>{
+            const label = data?.datasets?.[legendItem.datasetIndex]?.label || "";
+            return label !== "_rangeMin"; // ✅ hide helper from legend
+          }
+        }
       },
-     tooltip:{
-  callbacks:{
-    title:(items)=>{
-      const idx = items?.[0]?.dataIndex;
-      if(idx == null) return "";
-      return doyIndexToMonthDay(idx);
-    },
-    label:(ctx)=>{
-      // Only show Average, rounded to 2 decimals
-      if(ctx.dataset.label !== "Average") return null;
-      const v = ctx.parsed?.y;
-      if(!Number.isFinite(v)) return null;
-      return `Average: ${v.toFixed(2)}`;
-    }
-  }
-}
+      tooltip:{
+        callbacks:{
+          title:(items)=>{
+            const idx = items?.[0]?.dataIndex;
+            if(idx == null) return "";
+            return doyIndexToMonthDay(idx);
+          },
+          label:(ctx)=>{
+            const v = ctx.parsed?.y;
+            if(!Number.isFinite(v)) return null;
 
+            // Only show tooltip for Average + current year
+            const want = new Set(["Average", String(CUR_Y)]);
+            if(!want.has(ctx.dataset.label)) return null;
+
+            return `${ctx.dataset.label}: ${Math.round(v*100)/100}`;
+          }
+        }
+      }
     },
     scales:{
       x:{
