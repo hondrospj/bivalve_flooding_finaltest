@@ -417,7 +417,7 @@
 <!-- 5) Cumulative flooding by day-of-year (Avg + Min/Max band) -->
 <div class="card">
   <div class="hrow">
-    <h2>Cumulative anuall flooding</h2>
+    <h2>Cumulative annual flooding</h2>
     <div class="kicker" id="doyMeta">Computing…</div>
   </div>
 
@@ -1538,21 +1538,23 @@ function ensureTsChart(){
       maintainAspectRatio:false,
       plugins:{
         legend:{labels:{color:"rgba(234,240,255,.88)",font:{weight:"950"}}},
-        tooltip:{
-          callbacks:{
-            title:(items)=>{
-              if(!items || !items.length) return "";
-              const iso = tsChart.data.labels[items[0].dataIndex];
-              return fmtESTFull(iso);
-            },
-            label:(ctx)=>{
-              const v = ctx.parsed?.y;
-              const dsLabel = ctx.dataset?.label || "";
-              if(v === null || v === undefined || Number.isNaN(v)) return dsLabel;
-              return `${dsLabel}: ${(+v).toFixed(2)} ${datumLabel()}`;
-            }
-          }
-        }
+tooltip:{
+  callbacks:{
+    title:(items)=>{
+      const idx = items?.[0]?.dataIndex;
+      if(idx == null) return "";
+      const iso = tsChart?.data?.labels?.[idx];
+      return iso ? fmtESTFull(iso) : "";
+    },
+    label:(ctx)=>{
+      const v = ctx.parsed?.y;
+      if(!Number.isFinite(v)) return null;
+      return `${ctx.dataset.label}: ${v.toFixed(2)} ${unitText()}`;
+    }
+  }
+}
+
+
       },
       interaction:{mode:"index",intersect:false},
       scales:{
@@ -1852,6 +1854,52 @@ function computeDOYStatsFromDailyRows(rows){
   return `${m} ${day}`;
 }
 
+      function buildYTDSeriesFromDailyRows(){
+  // Uses the same logic as DOY (daily stats rows -> counts -> cumulative),
+  // but only for the current year and stops at "today".
+
+  if(!DOY_ROWS_CACHE || !DOY_ROWS_CACHE.length) return null;
+
+const { y: yNow, m: mNow, d: dNow } = getESTParts(new Date());
+
+
+  const todayIdx = calIndex365(yNow, mNow, dNow);
+  if(todayIdx === null) return null;
+
+  const stageDisplay = THRESH?.[DISPLAY_DATUM]?.minorLow ?? 0;
+
+  function meetsStage(navdFt){
+    const disp = toDisplayFtFromNavd(navdFt);
+    return Number.isFinite(disp) && disp >= stageDisplay;
+  }
+
+  // daily counts for current year
+  const daily = new Array(365).fill(0);
+
+  for(const r of DOY_ROWS_CACHE){
+    if(r.y !== yNow) continue;
+    const idx = calIndex365(r.y, r.m, r.d);
+    if(idx === null) continue;
+
+    let add = 0;
+    if(Number.isFinite(r.highNavd)  && meetsStage(r.highNavd))  add += 1;
+    if(Number.isFinite(r.lowhiNavd) && meetsStage(r.lowhiNavd)) add += 1;
+
+    if(add) daily[idx] += add;
+  }
+
+  // cumulative, and null after today so it doesn’t draw “future flatline”
+  const ytd = new Array(365).fill(null);
+  let run = 0;
+  for(let i=0;i<365;i++){
+    run += daily[i];
+    ytd[i] = (i <= todayIdx) ? run : null;
+  }
+
+  return ytd;
+}
+
+
 /* -------------------------
 Render chart
 ------------------------- */
@@ -1881,10 +1929,12 @@ function renderDOYCumPanel(){
   const mStarts = monthStarts365();
   const mNames  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+   const ytd = buildYTDSeriesFromDailyRows();
+
   const data = {
     labels,
     datasets: [
-{ label:"Min", data:min, borderWidth:0, pointRadius:0, hidden:true },
+      { label:"Min", data:min, borderWidth:0, pointRadius:0, hidden:true },
 
       {
         label:"Min–Max range",
@@ -1901,9 +1951,22 @@ function renderDOYCumPanel(){
         pointRadius:0,
         tension:0.25,
         borderColor:"rgba(45,212,191,.95)"
+      },
+
+      // ✅ NEW: Year-to-date line (current year)
+      {
+        label:"Year-to-date",
+        data: ytd || new Array(365).fill(null),
+        borderWidth: 3,
+        pointRadius: 0,
+        tension: 0.25,
+        borderColor: "#ef4444",
+        backgroundColor: "#ef4444",
+        spanGaps: false
       }
     ]
   };
+
 
   const options = {
     responsive:true,
@@ -2504,8 +2567,9 @@ $("resetBtn").addEventListener("click", ()=>{
 });
 
 datumBtn.addEventListener("click", ()=>{
-  const oldDatum = DISPLAY_DATUM;
-  refreshDOYAfterDatumToggle();
+const oldDatum = DISPLAY_DATUM;
+
+// flip datum happens later, so DO NOT refresh yet
 
   
 
@@ -2523,6 +2587,8 @@ datumBtn.addEventListener("click", ()=>{
 
   // flip datum
   DISPLAY_DATUM = (DISPLAY_DATUM==="MLLW") ? "NAVD88" : "MLLW";
+  refreshDOYAfterDatumToggle(); // ✅ recompute DOY + YTD in the new datum
+
 
   function toNewDisplayFromNavd(navd){
     if(navd===null || !Number.isFinite(navd)) return null;
@@ -2565,7 +2631,7 @@ datumBtn.addEventListener("click", ()=>{
   updateTsChartFromState();
 });
 
-      refreshDOYAfterDatumToggle();
+
 
 /* Start */
 boot().catch(err=>{
