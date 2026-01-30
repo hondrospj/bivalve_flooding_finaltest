@@ -412,6 +412,25 @@
         </table>
       </div>
     </div>
+    <div style="height:14px"></div>
+
+<!-- 5) Cumulative flooding by day-of-year (Avg + Min/Max band) -->
+<div class="card">
+  <div class="hrow">
+    <h2>Cumulative flooding by day of year</h2>
+    <div class="kicker" id="doyMeta">Computing…</div>
+  </div>
+
+  <div class="hint" id="doyHint">
+    Calendar-aligned (Jan–Dec). Grey band = min–max across years. Line = average.
+  </div>
+
+  <div style="height:10px"></div>
+  <div class="chartWrapTall"><canvas id="doyCumChart"></canvas></div>
+
+  <div class="foot" id="doyNote"></div>
+</div>
+
 
     <div style="height:14px"></div>
 
@@ -1599,6 +1618,7 @@ tsChart.data.datasets[1].data = predData;
 tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
 tsChart.options.scales.y.title.text = unitText();
 
+  
 // ---- HARD SCALE Y TO INCLUDE THRESHOLDS ----
 const {minor, moderate, major} = thresholdsDisplay();
 
@@ -1626,6 +1646,331 @@ tsChart.options.scales.y.ticks.stepSize = STEP;
 
 tsChart.update();
 
+}
+
+/* =========================
+DOY cumulative flooding (NO TXT) — REDONE (clean + datum-safe)
+- Pull USGS Daily Values (DV) for your site/param in NAVD88:
+    00021 = Daily Maximum (high)
+    00022 = Daily (Low-High) / secondary daily stat (depends on USGS series)
+- Count “events” >= flood stage:
+    flood stage = THRESH[DISPLAY_DATUM].minorLow (auto-updates when datum toggles)
+- Build per-year cumulative counts on a 365-day calendar axis (skip Feb 29)
+- Plot average + min/max band
+========================= */
+
+const DOY_START_ISO = "2000-01-01"; // backfill start (YYYY-MM-DD)
+let DOY_CACHE = null;               // { years, avg, min, max, stageLabel }
+let doyCumChart = null;
+
+/* Uses your dashboard’s Minor threshold automatically (datum-aware) */
+function doyFloodStageDisplayFt(){
+  return THRESH?.[DISPLAY_DATUM]?.minorLow ?? 0;
+}
+function doyStageLabel(){
+  const v = doyFloodStageDisplayFt();
+  return `Flood stage ≥ ${v.toFixed(2)} ft (${DISPLAY_DATUM})`;
+}
+
+/* -------------------------
+USGS DV fetch (NAVD88)
+------------------------- */
+async function fetchUSGSDV({ start="2000-01-01", end=null } = {}){
+  const endISO = end || new Date().toISOString().slice(0,10);
+
+  const url = new URL("https://waterservices.usgs.gov/nwis/dv/");
+  url.searchParams.set("format","json");
+  url.searchParams.set("sites", USGS_SITE);
+  url.searchParams.set("parameterCd", USGS_PARAM_PRIMARY);     // e.g., 72279
+  url.searchParams.set("startDT", start);
+  url.searchParams.set("endDT", endISO);
+  url.searchParams.set("statisticCd", "00021,00022");
+  url.searchParams.set("siteStatus","all");
+
+  const res = await fetch(url.toString(), { cache:"no-store" });
+  if(!res.ok) throw new Error("USGS DV failed " + res.status);
+  return res.json();
+}
+
+/* Identify a DV series’ statistic code reliably if possible */
+function getStatCode(ts){
+  const opt = ts?.variable?.options?.option || [];
+  const hit = opt.find(o => String(o?.name||"").toLowerCase() === "statistic code");
+  return hit ? String(hit.value) : null;
+}
+
+/* Extract DV points (date -> value), date is YYYY-MM-DD */
+function extractDVPoints(ts){
+  const vals = ts?.values?.[0]?.value || [];
+  return vals
+    .map(v => ({
+      date: String(v?.dateTime || "").slice(0,10),
+      ft: Number(v?.value)
+    }))
+    .filter(p => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && Number.isFinite(p.ft));
+}
+
+/* Fetch + normalize into rows:
+   [{y,m,d,date, highNavd, lowhiNavd}]  (NAVD88) */
+async function fetchUSGSDailyStats_NAVD88({ start=DOY_START_ISO, end=null } = {}){
+  const j = await fetchUSGSDV({ start, end });
+  const tss = j?.value?.timeSeries || [];
+  if(!tss.length) throw new Error("USGS DV returned no timeSeries.");
+
+  // Bucket series by statistic code
+  let tsHigh = null, tsLowHi = null;
+
+  for(const ts of tss){
+    const sc = getStatCode(ts);
+    if(sc === "00021") tsHigh = ts;
+    else if(sc === "00022") tsLowHi = ts;
+  }
+
+  // Fallback: if statCode metadata isn’t present, pick two largest series.
+  if(!tsHigh || !tsLowHi){
+    const sorted = [...tss].sort((a,b)=>(b?.values?.[0]?.value?.length||0)-(a?.values?.[0]?.value?.length||0));
+    if(!tsHigh)  tsHigh  = sorted[0] || null;
+    if(!tsLowHi) tsLowHi = sorted[1] || null;
+  }
+  if(!tsHigh)  throw new Error("USGS DV: could not identify daily HIGH (00021) series.");
+  if(!tsLowHi) throw new Error("USGS DV: could not identify daily LOW-HIGH (00022) series.");
+
+  const highPts  = extractDVPoints(tsHigh);
+  const lowhiPts = extractDVPoints(tsLowHi);
+
+  const map = new Map(); // date -> {highNavd, lowhiNavd}
+  for(const p of highPts){
+    if(!map.has(p.date)) map.set(p.date, { highNavd:null, lowhiNavd:null });
+    map.get(p.date).highNavd = p.ft;
+  }
+  for(const p of lowhiPts){
+    if(!map.has(p.date)) map.set(p.date, { highNavd:null, lowhiNavd:null });
+    map.get(p.date).lowhiNavd = p.ft;
+  }
+
+  const rows = [];
+  for(const [date, v] of map.entries()){
+    const y = +date.slice(0,4);
+    const m = +date.slice(5,7);
+    const d = +date.slice(8,10);
+    rows.push({ y, m, d, date, highNavd:v.highNavd, lowhiNavd:v.lowhiNavd });
+  }
+  rows.sort((a,b)=> a.date.localeCompare(b.date));
+  return rows;
+}
+
+/* -------------------------
+Calendar index (365-day axis)
+------------------------- */
+function isLeapYear(y){
+  return (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+}
+// returns 0..364, or null for Feb 29
+function calIndex365(y,m,d){
+  if(m === 2 && d === 29) return null;
+  const dt   = new Date(Date.UTC(y, m-1, d, 12,0,0));
+  const jan1 = new Date(Date.UTC(y, 0,   1, 12,0,0));
+  let idx = Math.floor((dt - jan1)/86400000); // 0-based day of year
+  if(isLeapYear(y) && m > 2) idx -= 1;        // compress after Feb 29
+  return idx;                                  // 0..364
+}
+function monthStarts365(){
+  const y = 2021; // non-leap
+  const out = [];
+  for(let m=1;m<=12;m++) out.push(calIndex365(y,m,1));
+  return out;
+}
+
+/* -------------------------
+Compute stats
+- counts “events” separately: daily high + daily low-high if each meets stage
+------------------------- */
+function computeDOYStatsFromDailyRows(rows){
+  const stageDisplay = doyFloodStageDisplayFt();
+
+  function meetsStage(navdFt){
+    const disp = toDisplayFtFromNavd(navdFt);
+    return Number.isFinite(disp) && disp >= stageDisplay;
+  }
+
+  const byYear = new Map(); // y -> dailyCounts[365]
+
+  for(const r of rows){
+    const idx = calIndex365(r.y, r.m, r.d);
+    if(idx === null) continue;
+
+    let add = 0;
+    if(Number.isFinite(r.highNavd)  && meetsStage(r.highNavd))  add += 1;
+    if(Number.isFinite(r.lowhiNavd) && meetsStage(r.lowhiNavd)) add += 1;
+    if(add === 0) continue;
+
+    if(!byYear.has(r.y)) byYear.set(r.y, new Array(365).fill(0));
+    byYear.get(r.y)[idx] += add;
+  }
+
+  const years = Array.from(byYear.keys()).sort((a,b)=>a-b);
+  if(!years.length) return null;
+
+  // cumulative per year
+  const cumByYear = years.map(y=>{
+    const daily = byYear.get(y);
+    const cum = new Array(365).fill(0);
+    let run = 0;
+    for(let i=0;i<365;i++){
+      run += (daily[i] || 0);
+      cum[i] = run;
+    }
+    return { y, cum };
+  });
+
+  const avg = new Array(365).fill(0);
+  const min = new Array(365).fill(0);
+  const max = new Array(365).fill(0);
+
+  for(let i=0;i<365;i++){
+    let lo = Infinity, hi = -Infinity, sum = 0;
+    for(const yr of cumByYear){
+      const v = yr.cum[i];
+      if(v < lo) lo = v;
+      if(v > hi) hi = v;
+      sum += v;
+    }
+    avg[i] = sum / cumByYear.length;
+    min[i] = lo;
+    max[i] = hi;
+  }
+
+  return { years, avg, min, max, stageLabel: doyStageLabel() };
+}
+
+/* -------------------------
+Render chart
+------------------------- */
+function renderDOYCumPanel(){
+  const meta   = document.getElementById("doyMeta");
+  const note   = document.getElementById("doyNote");
+  const canvas = document.getElementById("doyCumChart");
+  if(!canvas) return;
+
+  if(!DOY_CACHE){
+    if(meta) meta.textContent = "Loading daily stats…";
+    if(note) note.textContent = "";
+    return;
+  }
+
+  const { years, avg, min, max, stageLabel } = DOY_CACHE;
+
+  if(meta){
+    meta.textContent = `${years[0]}–${years[years.length-1]} · ${stageLabel}`;
+  }
+  if(note){
+    note.textContent =
+      `Grey band = min–max cumulative floods across years. Line = average. ` +
+      `Counts both “Daily High” (00021) and “Daily Low-High” (00022) when each meets flood stage.`;
+  }
+
+  const labels  = Array.from({length:365}, (_,i)=> i+1);
+  const mStarts = monthStarts365();
+  const mNames  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  const data = {
+    labels,
+    datasets: [
+      { label:"Min", data:min, borderWidth:0, pointRadius:0 },
+      {
+        label:"Min–Max range",
+        data:max,
+        borderWidth:0,
+        pointRadius:0,
+        fill:"-1",
+        backgroundColor:"rgba(255,255,255,0.18)"
+      },
+      {
+        label:"Average",
+        data:avg,
+        borderWidth:2,
+        pointRadius:0,
+        tension:0.25,
+        borderColor:"rgba(45,212,191,.95)"
+      }
+    ]
+  };
+
+  const options = {
+    responsive:true,
+    maintainAspectRatio:false,
+    interaction:{mode:"index", intersect:false},
+    plugins:{
+      legend:{
+        position:"bottom",
+        labels:{color:"rgba(234,240,255,.88)",font:{weight:"950"},boxWidth:14}
+      },
+      tooltip:{
+        callbacks:{
+          title:(items)=>`Day ${items?.[0]?.label || ""}`
+        }
+      }
+    },
+    scales:{
+      x:{
+        ticks:{
+          color:"rgba(169,182,211,.9)",
+          autoSkip:false,
+          maxRotation:0,
+          callback:(value, index)=>{
+            const m = mStarts.indexOf(index);
+            return (m >= 0) ? mNames[m] : "";
+          }
+        },
+        grid:{display:false}
+      },
+      y:{
+        ticks:{color:"rgba(169,182,211,.9)"},
+        grid:{color:"rgba(255,255,255,.06)"}
+      }
+    }
+  };
+
+  if(doyCumChart) doyCumChart.destroy();
+  doyCumChart = new Chart(canvas.getContext("2d"), { type:"line", data, options });
+}
+
+/* -------------------------
+Init (one-time load)
+Call this once in boot(), NOT every 5 minutes.
+------------------------- */
+async function initDOYCumulativeFromAPI(){
+  DOY_CACHE = null;
+  renderDOYCumPanel(); // show "Loading..."
+
+  const rows = await fetchUSGSDailyStats_NAVD88({ start: DOY_START_ISO });
+  DOY_CACHE = computeDOYStatsFromDailyRows(rows);
+  renderDOYCumPanel();
+}
+
+/* -------------------------
+Datum toggle hook
+When DISPLAY_DATUM flips, recompute from cached rows? (fast path)
+Simplest: recompute from already-fetched rows by storing rows too.
+If you want that, add DOY_ROWS_CACHE below.
+------------------------- */
+
+// OPTIONAL FAST PATH (recommended):
+let DOY_ROWS_CACHE = null;
+
+async function initDOYCumulativeFromAPI_FAST(){
+  DOY_CACHE = null;
+  renderDOYCumPanel();
+
+  DOY_ROWS_CACHE = await fetchUSGSDailyStats_NAVD88({ start: DOY_START_ISO });
+  DOY_CACHE = computeDOYStatsFromDailyRows(DOY_ROWS_CACHE);
+  renderDOYCumPanel();
+}
+
+function refreshDOYAfterDatumToggle(){
+  if(!DOY_ROWS_CACHE) { renderDOYCumPanel(); return; }
+  DOY_CACHE = computeDOYStatsFromDailyRows(DOY_ROWS_CACHE);
+  renderDOYCumPanel();
 }
 
 /* =========================
@@ -2087,15 +2432,26 @@ async function boot(){
   renderTopTen();
 
   // Alerts can run independently
-  await Promise.allSettled([ updateAlerts() ]);
+ await Promise.allSettled([ initDOYCumulativeFromAPI_FAST() ]);
 
-  // 1) Must load history first (HIGH_TIDES_NAVD)
-  const hist = await Promise.allSettled([ initJSONBackedHistory() /* or initTXTBackedHistory() */ ]);
-  if(hist[0].status === "rejected"){
-    console.error("History init failed:", hist[0].reason);
-    histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json.";
-    monthAvgMeta.textContent = "History load failed (monthly averages unavailable).";
-  }
+await Promise.allSettled([ updateAlerts() ]);
+
+
+ // 1) Must load history first (HIGH_TIDES_NAVD)
+const hist = await Promise.allSettled([
+  initJSONBackedHistory() /* or initTXTBackedHistory() */
+]);
+
+if (hist[0].status === "rejected") {
+  console.error("History init failed:", hist[0].reason);
+  if (histMeta)      histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json.";
+  if (monthAvgMeta)  monthAvgMeta.textContent = "History load failed (monthly averages unavailable).";
+}
+
+// ✅ NEW: DOY cumulative panel (daily stats from USGS API; no TXT)
+
+
+
 
   // 2) Live counts rely on history for current-year bar overwrite
   const live = await Promise.allSettled([ updateLiveAndAnnualCounts() ]);
@@ -2128,6 +2484,9 @@ $("resetBtn").addEventListener("click", ()=>{
 
 datumBtn.addEventListener("click", ()=>{
   const oldDatum = DISPLAY_DATUM;
+  refreshDOYAfterDatumToggle();
+
+  
 
   const vMin = parseFloat(minElevEl.value);
   const vMax = parseFloat(maxElevEl.value);
@@ -2184,6 +2543,8 @@ datumBtn.addEventListener("click", ()=>{
   updatePred24RangeCard();
   updateTsChartFromState();
 });
+
+      refreshDOYAfterDatumToggle();
 
 /* Start */
 boot().catch(err=>{
