@@ -417,12 +417,11 @@
 <!-- 5) Cumulative flooding by day-of-year (Avg + Min/Max band) -->
 <div class="card">
   <div class="hrow">
-    <h2>Cumulative flooding by day of year</h2>
+    <h2>Cumulative anuall flooding</h2>
     <div class="kicker" id="doyMeta">Computing…</div>
   </div>
 
   <div class="hint" id="doyHint">
-    Calendar-aligned (Jan–Dec). Grey band = min–max across years. Line = average.
   </div>
 
   <div style="height:10px"></div>
@@ -1843,6 +1842,16 @@ function computeDOYStatsFromDailyRows(rows){
   return { years, avg, min, max, stageLabel: doyStageLabel() };
 }
 
+      function doyIndexToMonthDay(idx){
+  // idx = 0..364 on non-leap calendar
+  const base = new Date(Date.UTC(2021, 0, 1)); // non-leap year
+  const d = new Date(base.getTime() + idx * 86400000);
+
+  const m = d.toLocaleString("en-US", { month:"short", timeZone:"UTC" });
+  const day = d.getUTCDate();
+  return `${m} ${day}`;
+}
+
 /* -------------------------
 Render chart
 ------------------------- */
@@ -1865,8 +1874,7 @@ function renderDOYCumPanel(){
   }
   if(note){
     note.textContent =
-      `Grey band = min–max cumulative floods across years. Line = average. ` +
-      `Counts both “Daily High” (00021) and “Daily Low-High” (00022) when each meets flood stage.`;
+    ''
   }
 
   const labels  = Array.from({length:365}, (_,i)=> i+1);
@@ -1876,7 +1884,8 @@ function renderDOYCumPanel(){
   const data = {
     labels,
     datasets: [
-      { label:"Min", data:min, borderWidth:0, pointRadius:0 },
+{ label:"Min", data:min, borderWidth:0, pointRadius:0, hidden:true },
+
       {
         label:"Min–Max range",
         data:max,
@@ -1905,11 +1914,23 @@ function renderDOYCumPanel(){
         position:"bottom",
         labels:{color:"rgba(234,240,255,.88)",font:{weight:"950"},boxWidth:14}
       },
-      tooltip:{
-        callbacks:{
-          title:(items)=>`Day ${items?.[0]?.label || ""}`
-        }
-      }
+     tooltip:{
+  callbacks:{
+    title:(items)=>{
+      const idx = items?.[0]?.dataIndex;
+      if(idx == null) return "";
+      return doyIndexToMonthDay(idx);
+    },
+    label:(ctx)=>{
+      // Only show Average, rounded to 2 decimals
+      if(ctx.dataset.label !== "Average") return null;
+      const v = ctx.parsed?.y;
+      if(!Number.isFinite(v)) return null;
+      return `Average: ${v.toFixed(2)}`;
+    }
+  }
+}
+
     },
     scales:{
       x:{
