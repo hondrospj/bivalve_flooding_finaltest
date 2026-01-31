@@ -65,11 +65,11 @@
     }
     .dot{width:9px;height:9px;border-radius:999px;background:var(--ok);box-shadow:0 0 0 4px rgba(45,212,191,.16)}
 
-    /* --- Mobile header overflow fix --- */
-.brand, .brandTitle { min-width: 0; }           /* allow shrink */
-.kicker, .name { min-width: 0; }               /* allow shrink */
+/* --- Mobile header overflow fix --- */
+.brand, .brandTitle { min-width: 0; }   /* allow shrink */
+.kicker, .name { min-width: 0; }        /* allow shrink */
 
-/* Truncate long station text instead of forcing layout wider */
+/* Default: truncate long station text */
 .kicker, .name{
   overflow: hidden;
   text-overflow: ellipsis;
@@ -77,7 +77,7 @@
 }
 
 #lastPill, #stagePill, #datumBtn{
-  min-width: 0;                                 /* critical in flex rows */
+  min-width: 0;
 }
 
 /* Let pills shrink instead of overflowing */
@@ -87,25 +87,46 @@
   text-overflow: ellipsis;
 }
 
-/* Stack the whole top area on mobile */
+/* Mobile: stack + allow wrap */
 @media (max-width: 720px){
   .top{
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
+    justify-content: center;
     gap: 10px;
+    text-align: center;
   }
 
-  /* the right-side container is currently inline-styled; this targets it safely */
+  .brand{
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .brandTitle{
+    align-items: center;
+    text-align: center;
+  }
+
+  /* On mobile: wrap text instead of ellipsis */
+  .kicker, .name{
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /* Center the pills row */
   .top > div{
     width: 100%;
-    justify-content: flex-start !important;
-  }
-
-  /* allow pills to wrap onto multiple rows */
-  .top > div{
+    justify-content: center !important;
     flex-wrap: wrap;
   }
+
+  .pill, .btn{
+    max-width: 100%;
+  }
 }
+
 
     .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:10px}
     @media(max-width:980px){.grid{grid-template-columns:1fr}}
@@ -1975,109 +1996,150 @@ function renderDOYCumPanel(){
   const mStarts = monthStarts365();
   const mNames  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  const data = {
-    labels,
-    datasets: [
-      // helper for band fill (NOT shown in legend)
-      {
-        label: "_rangeMin",
-        data: min,
-        borderWidth: 0,
-        pointRadius: 0,
-        showLine: false
-      },
+ const data = {
+  labels,
+  datasets: [
+    // helper for band fill (NOT shown in legend)
+    {
+      label: "_rangeMin",
+      data: min,
+      borderWidth: 0,
+      pointRadius: 0,
+      pointHoverRadius: 0, // ✅ Step 1B
+      pointHitRadius: 0,   // ✅ Step 1B
+      showLine: false
+    },
 
-      {
-        label: "Historic Range (min–max)",
-        data: max,
-        borderWidth: 0,
-        pointRadius: 0,
-        fill: "-1",
-        backgroundColor: "rgba(255,255,255,0.18)"
-      },
+    {
+      label: "Historic Range (min–max)",
+      data: max,
+      borderWidth: 0,
+      pointRadius: 0,
+      pointHoverRadius: 0, // ✅ Step 1B
+      pointHitRadius: 0,   // ✅ Step 1B
+      fill: "-1",
+      backgroundColor: "rgba(255,255,255,0.18)"
+    },
+{
+  label: "Average",
+  data: avg,
+  borderWidth: 2,
+  tension: 0.25,
 
-      {
-        label: "Average",
-        data: avg,
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.25,
-        borderColor: "rgba(45,212,191,.95)"
-      },
+  // line styling
+  borderColor: "rgba(45,212,191,.95)",
+  backgroundColor: "rgba(45,212,191,.95)", // ✅ REQUIRED for filled legend
 
-      // ✅ YTD line labeled as the actual current year (2026, 2027, ...)
-      {
-        label: String(CUR_Y),
-        data: ytd || new Array(365).fill(null),
-        borderWidth: 3,
-        pointRadius: 0,
-        tension: 0.25,
-        borderColor: "#ef4444",
-        backgroundColor: "#ef4444",
-        spanGaps: false
-      }
-    ]
-  };
+  // kill all points (including hover dots)
+  pointRadius: 0,
+  pointHoverRadius: 0,
+  pointHitRadius: 0,
 
-  const options = {
-    responsive:true,
-    maintainAspectRatio:false,
-    interaction:{mode:"index", intersect:false},
-    plugins:{
-      legend: { // ✅ spelled correctly
-        position:"bottom",
-        labels:{
-          color:"rgba(234,240,255,.88)",
-          font:{weight:"950"},
-          boxWidth:14,
-          filter:(legendItem, data)=>{
-            const label = data?.datasets?.[legendItem.datasetIndex]?.label || "";
-            return label !== "_rangeMin"; // ✅ hide helper from legend
-          }
-        }
-      },
-      tooltip:{
-        callbacks:{
-          title:(items)=>{
-            const idx = items?.[0]?.dataIndex;
-            if(idx == null) return "";
-            return doyIndexToMonthDay(idx);
-          },
-          label:(ctx)=>{
-            const v = ctx.parsed?.y;
-            if(!Number.isFinite(v)) return null;
+  // ✅ force legend chip to be a solid filled square
+  pointStyle: "rectFilled",
+  pointBackgroundColor: "rgba(45,212,191,.95)",
+  pointBorderColor: "rgba(45,212,191,.95)",
+  pointBorderWidth: 0,
 
-            // Only show tooltip for Average + current year
-            const want = new Set(["Average", String(CUR_Y)]);
-            if(!want.has(ctx.dataset.label)) return null;
+  fill: false
+},
 
-            return `${ctx.dataset.label}: ${Math.round(v*100)/100}`;
-          }
+
+    // ✅ YTD line labeled as the actual current year (2026, 2027, ...)
+    {
+      label: String(CUR_Y),
+      data: ytd || new Array(365).fill(null),
+      borderWidth: 3,
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      pointHitRadius: 0,
+      tension: 0.25,
+      borderColor: "#ef4444",
+      backgroundColor: "#ef4444",
+      spanGaps: false,
+
+      // ✅ Legend chip becomes a filled square (matches Average)
+      pointStyle: "rectFilled",
+      pointBackgroundColor: "#ef4444",
+      pointBorderColor: "#ef4444"
+    }
+  ]
+};
+
+const options = {
+  responsive:true,
+  maintainAspectRatio:false,
+  interaction:{mode:"index", intersect:false},
+
+  // ✅ Step 1A: remove the hover “dot” entirely (global)
+  elements:{
+    point:{
+      radius:0,
+      hoverRadius:0,
+      hitRadius:0
+    }
+  },
+
+  plugins:{
+    legend: { // ✅ spelled correctly
+      position:"bottom",
+      labels:{
+        color:"rgba(234,240,255,.88)",
+        font:{weight:"950"},
+        boxWidth:14,
+
+        // ✅ Use filled point-style legend markers
+        usePointStyle:true,
+
+        filter:(legendItem, data)=>{
+          const label = data?.datasets?.[legendItem.datasetIndex]?.label || "";
+          return label !== "_rangeMin"; // ✅ hide helper from legend
         }
       }
     },
-    scales:{
-      x:{
-        ticks:{
-          color:"rgba(169,182,211,.9)",
-          autoSkip:false,
-          maxRotation:0,
-          callback:(value, index)=>{
-            const m = mStarts.indexOf(index);
-            return (m >= 0) ? mNames[m] : "";
-          }
+    tooltip:{
+      callbacks:{
+        title:(items)=>{
+          const idx = items?.[0]?.dataIndex;
+          if(idx == null) return "";
+          return doyIndexToMonthDay(idx);
         },
-        grid:{display:false}
-      },
-      y:{
-        ticks:{color:"rgba(169,182,211,.9)"},
-        grid:{color:"rgba(255,255,255,.06)"}
+        label:(ctx)=>{
+          const v = ctx.parsed?.y;
+          if(!Number.isFinite(v)) return null;
+
+          // Only show tooltip for Average + current year
+          const want = new Set(["Average", String(CUR_Y)]);
+          if(!want.has(ctx.dataset.label)) return null;
+
+          return `${ctx.dataset.label}: ${Math.round(v*100)/100}`;
+        }
       }
     }
-  };
+  },
 
-  if(doyCumChart) doyCumChart.destroy();
-  doyCumChart = new Chart(canvas.getContext("2d"), { type:"line", data, options });
+  scales:{
+    x:{
+      ticks:{
+        color:"rgba(169,182,211,.9)",
+        autoSkip:false,
+        maxRotation:0,
+        callback:(value, index)=>{
+          const m = mStarts.indexOf(index);
+          return (m >= 0) ? mNames[m] : "";
+        }
+      },
+      grid:{display:false}
+    },
+    y:{
+      ticks:{color:"rgba(169,182,211,.9)"},
+      grid:{color:"rgba(255,255,255,.06)"}
+    }
+  }
+};
+
+if(doyCumChart) doyCumChart.destroy();
+doyCumChart = new Chart(canvas.getContext("2d"), { type:"line", data, options });
 }
 
 /* -------------------------
