@@ -2560,28 +2560,74 @@ function normalizePeaksJson(json){
 
 async function initJSONBackedHistory(){
   const { json } = await resolvePeaksJsonUrl();
-  const peaks = normalizePeaksJson(json); // historical peak events (NAVD88)
+  const peaks = normalizePeaksJson(json); // NAVD88
 
-  // ---- Append live peaks since Jan 1 2026 (NAVD88) ----
-  let livePeaks = [];
-  try{
-    livePeaks = await buildLiveFloodPeaksSince2026();
-  }catch(e){
-    console.error("Live peaks build failed:", e);
-    livePeaks = [];
-  }
-
-  // Combine + de-dupe (timestamp + height)
-  const combined = [...peaks, ...livePeaks];
-  const seen = new Set();
-  HIGH_TIDES_NAVD = combined.filter(r=>{
-    const key = `${r.t}|${Number(r.ft).toFixed(3)}`;
-    if(seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  // Only build live peaks if JSON does NOT already contain 2026+
+  const has2026Plus = peaks.some(e => {
+    const y = new Date(e.t).getUTCFullYear();
+    return Number.isFinite(y) && y >= 2026;
   });
 
-  // Sort newest first
+  let livePeaks = [];
+  if(!has2026Plus){
+    try{
+      livePeaks = await buildLiveFloodPeaksSince2026();
+    }catch(e){
+      console.error("Live peaks build failed:", e);
+      livePeaks = [];
+    }
+  }
+
+  // Combine (may contain overlaps)
+  const combined = [...peaks, ...livePeaks];
+
+  /* --- HARD DEDUPE: keep max per (EST day + tide-cycle bucket) --- */
+  function estParts(iso){
+    const p = fmtPartsYMD.formatToParts(new Date(iso)); // TZ = Etc/GMT+5
+    return {
+      y: p.find(x=>x.type==="year")?.value,
+      m: p.find(x=>x.type==="month")?.value,
+      d: p.find(x=>x.type==="day")?.value
+    };
+  }
+
+  function estHour(iso){
+    const dt = new Date(iso);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: TZ,
+      hour: "2-digit",
+      hour12: false
+    }).formatToParts(dt);
+    return +(parts.find(x=>x.type==="hour")?.value || "0");
+  }
+
+  function tideBucket(iso){
+    return estHour(iso) < 12 ? "AM" : "PM";
+  }
+
+  const bestByKey = new Map();
+
+  for(const e of combined){
+    const dt = new Date(e.t);
+    if(Number.isNaN(dt.getTime())) continue;
+
+    const ft = Number(e.ft);
+    if(!Number.isFinite(ft)) continue;
+
+    const {y,m,d} = estParts(e.t);
+    if(!y || !m || !d) continue;
+
+    const key = `${y}-${m}-${d}|${tideBucket(e.t)}`;
+
+    const prev = bestByKey.get(key);
+    if(!prev || ft > prev.ft){
+      bestByKey.set(key, e);
+    }
+  }
+
+  HIGH_TIDES_NAVD = Array.from(bestByKey.values());
+
+  // Newest first
   HIGH_TIDES_NAVD.sort((a,b)=>new Date(b.t)-new Date(a.t));
 
   // Refresh UI that depends on HIGH_TIDES_NAVD
@@ -2593,6 +2639,7 @@ async function initJSONBackedHistory(){
   if(histMeta) histMeta.textContent = "";
   if(monthAvgMeta) monthAvgMeta.textContent = "";
 }
+
 
 
 async function initTXTBackedHistory(){
