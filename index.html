@@ -889,6 +889,25 @@ async function loadDailyTidesFromTXT(){
   setTXTStatus(""); // suppress TXT OK message
 }
 
+      async function fetchPETSSForecast_MLLW({ hours = 48 } = {}){
+  // Your site-hosted JSON (no CORS issues)
+  const url = `data/petss_forecast_8536889_mllw.json?v=${Date.now()}`;
+
+  const res = await fetch(url, { cache: "no-store" });
+  if(!res.ok) throw new Error("PETSS JSON fetch failed " + res.status);
+
+  const j = await res.json();
+  const pts = (j?.points || [])
+    .map(p => ({ t: p.t, ft: Number(p.fcst) }))   // <-- use total water level forecast
+    .filter(p => p.t && Number.isFinite(p.ft))
+    .sort((a,b)=> new Date(a.t) - new Date(b.t));
+
+  // Clip again client-side just in case
+  const clipped = clipHoursFromFirst(pts, hours);
+
+  return { issuedTime: j?.model_time_utc || j?.fetched_utc || null, points: clipped };
+}
+
 /* =========================
 USGS IV fetch — STRICTLY tidal elevation 72279 (not discharge)
 ========================= */
@@ -2475,8 +2494,9 @@ async function updateTimeseries(){
 
   // Forecast: NWPS official (MLLW)
   try {
-    const { issuedTime, points } = await fetchNWPSpredictions_MLLW({ hours: 72 });
-    STATE.pred72Mllw = points;
+const { issuedTime, points } = await fetchPETSSForecast_MLLW({ hours: 48 });
+STATE.pred72Mllw = points;
+
 
     fcNote.textContent = points.length
       ? (issuedTime ? `NOAA/NWPS official forecast issued: ${fmtESTFull(issuedTime)}` : "")
