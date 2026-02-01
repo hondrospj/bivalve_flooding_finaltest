@@ -2,11 +2,16 @@
 "use strict";
 
 /**
- * Update PETSS station "ensemble mean" forecast via NOMADS PETSS prod directory.
- * We treat the PETSS "Fcst" column as the ensemble mean total water forecast.
+ * PETSS station updater via NOMADS.
+ *
+ * This version supports the NOMADS station CSV format like:
+ *   TIME, TIDE, OB, SURGE, BIAS, TWL, SURGE90p, TWL90p, SURGE10p, TWL10p
+ *   202601261800, 3.376, 102.385, 0.900, 0.000, 4.276, ...
+ *
+ * We treat TWL as the "ensemble mean" (total water level).
  *
  * Outputs:
- *  - data/petss_ensemble_mean.csv   (time_utc, fcst_ft_mllw)
+ *  - data/petss_ensemble_mean.csv   (time_utc,twl_ft_mllw)
  *  - data/petss_ensemble_mean.json  ({ meta, series[] })
  *  - data/petss_meta.json           (metadata)
  *  - data/petss_station_raw.txt     (raw station file text for inspection)
@@ -33,14 +38,14 @@ function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
-function writeText(filePath, text) {
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, text, "utf8");
+function writeText(fp, text) {
+  ensureDir(path.dirname(fp));
+  fs.writeFileSync(fp, text, "utf8");
 }
 
-function writeJSON(filePath, obj) {
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, JSON.stringify(obj, null, 2) + "\n", "utf8");
+function writeJSON(fp, obj) {
+  ensureDir(path.dirname(fp));
+  fs.writeFileSync(fp, JSON.stringify(obj, null, 2) + "\n", "utf8");
 }
 
 function fetchText(url) {
@@ -49,7 +54,7 @@ function fetchText(url) {
       url,
       {
         headers: {
-          "User-Agent": "petss-forecast-updater/1.0 (github-actions)",
+          "User-Agent": "petss-forecast-updater/2.0 (github-actions)",
           "Accept": "text/html,application/octet-stream,*/*",
         },
       },
@@ -76,7 +81,7 @@ function fetchBuffer(url) {
       url,
       {
         headers: {
-          "User-Agent": "petss-forecast-updater/1.0 (github-actions)",
+          "User-Agent": "petss-forecast-updater/2.0 (github-actions)",
           "Accept": "application/octet-stream,*/*",
         },
       },
@@ -97,8 +102,8 @@ function fetchBuffer(url) {
   });
 }
 
-// Very small CSV splitter that handles commas + optional quotes.
 function splitCsvLine(line) {
+  // Simple CSV splitter with quotes support
   const out = [];
   let cur = "";
   let inQ = false;
@@ -125,21 +130,18 @@ function looksLikeHtml(text) {
 }
 
 function listDirsFromIndexHtml(html) {
-  // NOMADS directory listings typically include links like: petss.20260131/
   const re = /petss\.(\d{8})\//g;
   const dirs = [];
   let m;
   while ((m = re.exec(html)) !== null) {
     dirs.push({ name: `petss.${m[1]}/`, ymd: m[1] });
   }
-  // unique
   const uniq = new Map();
   for (const d of dirs) uniq.set(d.name, d);
   return Array.from(uniq.values()).sort((a, b) => (a.ymd < b.ymd ? -1 : 1));
 }
 
 function listTarballsFromIndexHtml(html) {
-  // Expect tarballs like: petss.t18z.csv.tar.gz
   const re = /petss\.t(\d{2})z\.csv\.tar\.gz/g;
   const tars = [];
   let m;
@@ -152,13 +154,11 @@ function listTarballsFromIndexHtml(html) {
 }
 
 function chooseBestCycleTarball(tars) {
-  // Prefer latest typical cycle order
   const prefer = ["18", "12", "06", "00"];
   for (const h of prefer) {
     const found = tars.find((x) => x.hour === h);
     if (found) return found;
   }
-  // fallback: pick max hour
   tars.sort((a, b) => Number(a.hour) - Number(b.hour));
   return tars[tars.length - 1] || null;
 }
@@ -166,8 +166,7 @@ function chooseBestCycleTarball(tars) {
 function findFilesRecursive(rootDir) {
   const out = [];
   function walk(d) {
-    const entries = fs.readdirSync(d, { withFileTypes: true });
-    for (const e of entries) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const full = path.join(d, e.name);
       if (e.isDirectory()) walk(full);
       else out.push(full);
@@ -177,157 +176,73 @@ function findFilesRecursive(rootDir) {
   return out;
 }
 
-function parseMMDD_HHZ(token) {
-  // token example: "01/28 18Z"
-  // Allow "01/28 18Z" or "01/28 18Z," (caller should trim)
-  const m = token.match(/^(\d{2})\/(\d{2})\s+(\d{2})Z$/i);
+function parseTimeYYYYMMDDHHMM(s) {
+  // Example: 202601261800 (YYYYMMDDHHMM)
+  const m = String(s).trim().match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/);
   if (!m) return null;
-  return { mm: Number(m[1]), dd: Number(m[2]), hh: Number(m[3]) };
-}
-
-function toIsoUtc(year, mm, dd, hh) {
-  // month in JS Date is 0-based
-  const dt = new Date(Date.UTC(year, mm - 1, dd, hh, 0, 0));
+  const yyyy = Number(m[1]);
+  const mm = Number(m[2]);
+  const dd = Number(m[3]);
+  const hh = Number(m[4]);
+  const min = Number(m[5]);
+  const dt = new Date(Date.UTC(yyyy, mm - 1, dd, hh, min, 0));
+  if (isNaN(dt.getTime())) return null;
   return dt.toISOString();
 }
 
-function inferYearForSeries(baseYmd, points) {
-  // baseYmd is like "20260131" from the prod dir name
-  // station rows have no year; we infer around base date and handle year rollover (Dec/Jan).
-  const baseYear = Number(baseYmd.slice(0, 4));
-  const baseMonth = Number(baseYmd.slice(4, 6));
-  // default year
-  let year = baseYear;
-
-  // If base is January and we see month=12 in the series => previous year
-  const months = new Set(points.map((p) => p.mm));
-  if (baseMonth === 1 && months.has(12)) {
-    // Some products may span late Dec -> early Jan
-    // We'll: If most points are Jan, keep baseYear, but allow Dec to be baseYear-1.
-    return { baseYear, decYear: baseYear - 1, janYear: baseYear };
-  }
-
-  // If base is December and we see month=1 => next year
-  if (baseMonth === 12 && months.has(1)) {
-    return { baseYear, decYear: baseYear, janYear: baseYear + 1 };
-  }
-
-  // Otherwise all same year
-  return { baseYear, decYear: baseYear, janYear: baseYear };
+function isMissingValue(x) {
+  // PETSS missing convention often uses 9999.000
+  return !Number.isFinite(x) || Math.abs(x - 9999.0) < 1e-6;
 }
 
-function parseStationTextBlock(stationText, baseYmd) {
-  // Supports the shown PETSS format:
-  // Line 1: "Bivalve NJ 8536889 (Height in Feet MLLW)"
-  // Line 2: "Date(GMT),  Surge,  Tide,  Obs,  Fcst,  Anom,Fst90%,Fst10%"
-  // Lines: "01/28 18Z,  0.0,  0.7,  102.4,  0.7,  0.0,  0.6,  0.7"
-  const lines = stationText
+function parseStationCsvFormat(text) {
+  const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
 
-  // Find header line containing Date(GMT)
+  if (lines.length < 2) throw new Error("Station file too short to parse.");
+
+  // Find header line containing TIME and TWL
   let headerIdx = -1;
   let header = null;
-  for (let i = 0; i < Math.min(lines.length, 25); i++) {
-    if (/date\s*\(gmt\)/i.test(lines[i])) {
+  for (let i = 0; i < Math.min(lines.length, 20); i++) {
+    const low = lines[i].toLowerCase().replace(/\s+/g, "");
+    if (low.startsWith("time,") && low.includes(",twl")) {
       headerIdx = i;
-      header = splitCsvLine(lines[i]).map((x) => x.trim());
+      header = splitCsvLine(lines[i]);
       break;
     }
   }
   if (headerIdx < 0 || !header) {
-    throw new Error("Could not find Date(GMT) header line in station text block.");
+    throw new Error('Could not find a header line like "TIME,...,TWL,..."');
   }
 
-  const lower = header.map((h) => h.toLowerCase().replace(/\s+/g, ""));
-  const dateIdx = lower.findIndex((h) => h.includes("date(gmt)") || h === "date(gmt)");
-  const fcstIdx = lower.findIndex((h) => h === "fcst");
-  if (dateIdx < 0) throw new Error("Header found, but no Date(GMT) column index.");
-  if (fcstIdx < 0) throw new Error("Header found, but no Fcst column index (expected PETSS ensemble mean).");
+  const norm = header.map((h) => h.toLowerCase().replace(/\s+/g, ""));
+  const timeIdx = norm.indexOf("time");
+  const twlIdx = norm.indexOf("twl");
 
-  // Parse rows after headerIdx
-  const rawPoints = [];
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const cols = splitCsvLine(lines[i]);
-    if (!cols || cols.length < Math.max(dateIdx, fcstIdx) + 1) continue;
-
-    const dateToken = (cols[dateIdx] || "").trim();
-    const parsed = parseMMDD_HHZ(dateToken);
-    if (!parsed) continue;
-
-    const fcstStr = (cols[fcstIdx] || "").trim();
-    const fcst = Number(fcstStr);
-    if (!Number.isFinite(fcst)) continue;
-
-    rawPoints.push({ ...parsed, fcst });
-  }
-
-  if (rawPoints.length === 0) {
-    throw new Error("Found Date(GMT) header but could not parse any data rows in text-block format.");
-  }
-
-  const yearMap = inferYearForSeries(baseYmd, rawPoints);
-  const series = rawPoints.map((p) => {
-    const y = p.mm === 12 ? yearMap.decYear : p.mm === 1 ? yearMap.janYear : yearMap.baseYear;
-    return { time_utc: toIsoUtc(y, p.mm, p.dd, p.hh), fcst_ft_mllw: p.fcst };
-  });
-
-  // Sort time ascending
-  series.sort((a, b) => (a.time_utc < b.time_utc ? -1 : 1));
-  return series;
-}
-
-function parseAlternateCsv(stationText, baseYmd) {
-  // Fallback parser for “real CSV” cases where first column is date-like.
-  // Accepts:
-  //  - ISO timestamps in first col
-  //  - Or Date(GMT) as first header column
-  const lines = stationText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  if (lines.length < 2) throw new Error("CSV fallback: too few lines.");
-
-  const header = splitCsvLine(lines[0]).map((x) => x.trim());
-  const lower = header.map((h) => h.toLowerCase().replace(/\s+/g, ""));
-
-  let timeIdx = 0;
-  // Prefer explicit date headers if present
-  const explicitDate = lower.findIndex((h) => h.includes("date") || h.includes("time"));
-  if (explicitDate >= 0) timeIdx = explicitDate;
-
-  // Ensemble mean column: prefer Fcst
-  let meanIdx = lower.findIndex((h) => h === "fcst");
-  if (meanIdx < 0) meanIdx = lower.findIndex((h) => h.includes("mean") || (h.includes("ens") && h.includes("mean")));
-  if (meanIdx < 0) throw new Error("CSV fallback: could not locate a mean column (Fcst/mean).");
+  if (timeIdx < 0) throw new Error("Header present but TIME column not found.");
+  if (twlIdx < 0) throw new Error("Header present but TWL column not found.");
 
   const series = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIdx + 1; i < lines.length; i++) {
     const cols = splitCsvLine(lines[i]);
-    if (cols.length <= Math.max(timeIdx, meanIdx)) continue;
-    const t = (cols[timeIdx] || "").trim();
-    const v = Number((cols[meanIdx] || "").trim());
-    if (!Number.isFinite(v)) continue;
+    if (cols.length <= Math.max(timeIdx, twlIdx)) continue;
 
-    // Try ISO
-    const dt = new Date(t);
-    if (!isNaN(dt.getTime())) {
-      series.push({ time_utc: dt.toISOString(), fcst_ft_mllw: v });
-      continue;
-    }
+    const iso = parseTimeYYYYMMDDHHMM(cols[timeIdx]);
+    if (!iso) continue;
 
-    // Try MM/DD HHZ format
-    const parsed = parseMMDD_HHZ(t);
-    if (parsed) {
-      const yearMap = inferYearForSeries(baseYmd, [parsed]);
-      const y = parsed.mm === 12 ? yearMap.decYear : parsed.mm === 1 ? yearMap.janYear : yearMap.baseYear;
-      series.push({ time_utc: toIsoUtc(y, parsed.mm, parsed.dd, parsed.hh), fcst_ft_mllw: v });
-    }
+    const twl = Number(String(cols[twlIdx]).trim());
+    if (isMissingValue(twl)) continue;
+
+    series.push({ time_utc: iso, twl_ft_mllw: twl });
   }
 
-  if (series.length === 0) throw new Error("CSV fallback: no recognizable data rows.");
+  if (series.length === 0) {
+    throw new Error("No valid rows parsed (all missing/invalid?).");
+  }
+
   series.sort((a, b) => (a.time_utc < b.time_utc ? -1 : 1));
   return series;
 }
@@ -385,7 +300,6 @@ async function main() {
     debug.steps.push("download tarball bytes");
     const buf = await fetchBuffer(tarUrl);
 
-    // Write tarball to tmp
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "petss-"));
     const tarPath = path.join(tmpDir, chosenTar.name);
     fs.writeFileSync(tarPath, buf);
@@ -394,50 +308,36 @@ async function main() {
     ensureDir(extractDir);
 
     debug.steps.push("extract tarball");
-    // tar -xzf tarPath -C extractDir
     execFileSync("tar", ["-xzf", tarPath, "-C", extractDir], { stdio: "ignore" });
 
     debug.steps.push("find station file in extracted tree");
     const allFiles = findFilesRecursive(extractDir);
 
-    // Prefer exact match: .../8536889.csv
     let stationFile = allFiles.find((f) => path.basename(f) === `${STID}.csv`);
-    // Fallback: any file containing STID and .csv
     if (!stationFile) stationFile = allFiles.find((f) => f.includes(STID) && f.toLowerCase().endsWith(".csv"));
 
     if (!stationFile) {
-      debug.files.extractedSample = allFiles.slice(0, 40);
+      debug.files.extractedSample = allFiles.slice(0, 60);
       throw new Error(`Could not find station file for STID ${STID} in extracted tarball.`);
     }
 
-    console.log("Station file:", stationFile);
+    console.log("Station CSV file:", stationFile);
     debug.files.stationFile = stationFile;
 
     debug.steps.push("read station text");
     const stationText = fs.readFileSync(stationFile, "utf8");
 
-    // Always save raw station text for you to inspect in repo
+    // Save raw station file always
     writeText(path.join(OUT_DIR, "petss_station_raw.txt"), stationText);
 
     if (looksLikeHtml(stationText)) {
-      throw new Error("Station file looks like HTML (likely an error/blocked response), not data.");
+      throw new Error("Station file looks like HTML (blocked/error response), not data.");
     }
 
-    // Parse series
-    const baseYmd = latestDir.ymd;
-    let series;
-    debug.steps.push("parse station text (preferred text-block format)");
-    try {
-      series = parseStationTextBlock(stationText, baseYmd);
-      debug.notes.push("Parsed using PETSS text-block format with Date(GMT) header; Fcst used as ensemble mean.");
-    } catch (e1) {
-      debug.notes.push(`Text-block parse failed: ${e1.message}`);
-      debug.steps.push("parse station text (alternate CSV fallback)");
-      series = parseAlternateCsv(stationText, baseYmd);
-      debug.notes.push("Parsed using alternate CSV fallback; Fcst/mean used as ensemble mean.");
-    }
+    debug.steps.push("parse station CSV format (TIME/TWL)");
+    const series = parseStationCsvFormat(stationText);
+    debug.notes.push("Parsed NOMADS station format using TIME + TWL (ensemble mean total water level).");
 
-    // Build outputs
     const generatedAt = new Date().toISOString();
 
     const meta = {
@@ -449,23 +349,23 @@ async function main() {
       tar_url: tarUrl,
       generated_at_utc: generatedAt,
       units: "feet (MLLW)",
-      ensemble_mean_definition: "Fcst column from PETSS station output",
+      ensemble_mean_definition: "TWL column from PETSS station output",
       points: series.length,
       time_start_utc: series[0]?.time_utc || null,
       time_end_utc: series[series.length - 1]?.time_utc || null,
     };
 
-    // CSV
-    const csvLines = ["time_utc,fcst_ft_mllw"];
+    // CSV output
+    const csvLines = ["time_utc,twl_ft_mllw"];
     for (const p of series) {
-      csvLines.push(`${p.time_utc},${p.fcst_ft_mllw}`);
+      csvLines.push(`${p.time_utc},${p.twl_ft_mllw}`);
     }
     writeText(path.join(OUT_DIR, "petss_ensemble_mean.csv"), csvLines.join("\n") + "\n");
 
-    // JSON
+    // JSON output
     writeJSON(path.join(OUT_DIR, "petss_ensemble_mean.json"), { meta, series });
 
-    // Meta only
+    // Meta output
     writeJSON(path.join(OUT_DIR, "petss_meta.json"), meta);
 
     // Debug info
@@ -482,9 +382,7 @@ async function main() {
       debug.error = msg;
       writeJSON(path.join(OUT_DIR, "petss_debug_info.json"), debug);
       writeText(path.join(OUT_DIR, "petss_error.txt"), msg + "\n");
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
 
     process.exit(1);
   }
