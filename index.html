@@ -951,18 +951,37 @@ async function fetchFirstOkJson(urls){
 async function fetchPETSSForecast_MLLW({ hours = 48 } = {}){
   const { url, json } = await fetchFirstOkJson(PETSS_JSON_CANDIDATES);
 
-  const issuedTime =
-    json?.model_time_utc ||
-    json?.issued_utc ||
-    json?.fetched_utc ||
-    json?.issuedTime ||
-    null;
+const issuedTime =
+  json?.model_time_utc ||
+  json?.issued_utc ||
+  json?.fetched_utc ||
+  json?.issuedTime ||
+  null;
 
-  const ptsAll = normalizePetssJsonToPoints(json);
-  const pts = clipHoursFromFirst(ptsAll, hours);
+// 1) Normalize all points from whatever JSON shape you have
+const ptsAll = normalizePetssJsonToPoints(json);
 
-  return { issuedTime, points: pts, urlUsed: url };
+// Debug: what did we actually load?
+console.log("PETSS total points:", ptsAll.length);
+if (ptsAll.length) {
+  console.log("PETSS range:", ptsAll[0].t, "→", ptsAll[ptsAll.length - 1].t);
+} else {
+  console.log("PETSS range: (empty)");
 }
+
+// 2) Clip to N hours from the first point (your current behavior)
+const pts = clipHoursFromFirst(ptsAll, hours);
+
+// Debug: what survives the clip?
+console.log("PETSS clipped points:", pts.length);
+if (pts.length) {
+  console.log("PETSS clipped range:", pts[0].t, "→", pts[pts.length - 1].t);
+} else {
+  console.log("PETSS clipped range: (empty)");
+}
+
+return { issuedTime, points: pts, urlUsed: url };
+
 
 
 /* =========================
