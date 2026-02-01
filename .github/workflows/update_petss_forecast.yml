@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -26,54 +26,35 @@ jobs:
         with:
           node-version: "20"
 
-      # --- OPTIONAL: if your script is in a subfolder, keep this ---
-      # - name: Install deps
-      #   run: npm ci
-
-      # ✅ Edit THESE TWO values to match your repo
-      # 1) SCRIPT_PATH: where your fetch/convert script lives
-      # 2) OUT_FILE: must match what your dashboard fetches (data/...)
-      - name: Generate PETSS JSON
-        env:
-          # Your dashboard fetches: data/petss_forecast_8536889_mllw.json
-          OUT_FILE: "data/petss_forecast_8536889_mllw.json"
-          # Change this if your script file name/path differs
-          SCRIPT_PATH: "tools/update_petss_forecast.mjs"
+      - name: Generate PETSS forecast JSON
         run: |
-          set -euo pipefail
+          set -e
 
-          mkdir -p "$(dirname "$OUT_FILE")"
+          echo "Running PETSS fetch script…"
 
-          if [ ! -f "$SCRIPT_PATH" ]; then
-            echo "ERROR: Script not found at $SCRIPT_PATH"
-            echo "Set SCRIPT_PATH to the correct file path in this workflow."
+          mkdir -p data
+
+          node tools/update_petss_forecast.mjs
+
+          if [ ! -s data/petss_forecast_8536889_mllw.json ]; then
+            echo "ERROR: PETSS JSON was not created"
             exit 1
           fi
 
-          node "$SCRIPT_PATH" --out "$OUT_FILE"
+          echo "PETSS JSON created successfully:"
+          ls -lh data/petss_forecast_8536889_mllw.json
 
-          if [ ! -s "$OUT_FILE" ]; then
-            echo "ERROR: Output JSON was not created or is empty: $OUT_FILE"
-            exit 1
-          fi
-
-          echo "Wrote $OUT_FILE"
-          ls -lh "$OUT_FILE"
-
-      # ✅ Fixes the common "exit code 1" from git commit when nothing changed
-      - name: Commit & push (only if changed)
+      - name: Commit and push if changed
         run: |
-          set -euo pipefail
-
           git add data/petss_forecast_8536889_mllw.json
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No PETSS changes to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git commit -m "Update PETSS forecast JSON"
+          git commit -m "Update PETSS forecast"
           git push
