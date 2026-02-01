@@ -3,17 +3,14 @@
  * Update PETSS station forecast by pulling station CSV from NOMADS PETSS production tarballs.
  *
  * Outputs:
- *  - data/petss_forecast.csv   (station CSV as-is)
- *  - data/petss_forecast.json  (parsed rows)
- *  - data/petss_meta.json      (source folder/cycle/stid/datum + timestamps)
+ *  - data/petss_forecast.csv        (station file as-is)
+ *  - data/petss_forecast.json       (parsed rows)
+ *  - data/petss_meta.json           (source folder/cycle/stid/datum + timestamps)
+ *  - data/petss_station_debug.txt   (only written if parse fails; first lines for debugging)
  *
  * Env:
  *  - PETSS_STID   (required) e.g. 8536889
- *  - PETSS_DATUM  (optional) e.g. MLLW (default)
- *
- * Notes:
- *  - Uses NOMADS directory listing to find latest petss.YYYYMMDD and cycle tarball petss.t??z.csv.tar.gz
- *  - Uses system `tar` (available on ubuntu-latest) to extract.
+ *  - PETSS_DATUM  (optional) e.g. MLLW (default; metadata only)
  */
 
 const fs = require("fs");
@@ -34,6 +31,7 @@ const OUT_DIR = path.resolve("data");
 const OUT_CSV = path.join(OUT_DIR, "petss_forecast.csv");
 const OUT_JSON = path.join(OUT_DIR, "petss_forecast.json");
 const OUT_META = path.join(OUT_DIR, "petss_meta.json");
+const OUT_DEBUG = path.join(OUT_DIR, "petss_station_debug.txt");
 
 const NOMADS_BASE = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/petss/prod/";
 
@@ -47,7 +45,7 @@ function httpGet(url) {
       url,
       {
         headers: {
-          "User-Agent": "petss-forecast-updater/1.0 (github-actions)",
+          "User-Agent": "petss-forecast-updater/1.1 (github-actions)",
           "Accept": "text/html,application/octet-stream,*/*",
         },
       },
@@ -79,35 +77,27 @@ function httpGet(url) {
 }
 
 function parseApacheListingForPetssDirs(htmlText) {
-  // Expect entries like: petss.20260131/
   const re = /href="(petss\.(\d{8})\/)"/g;
   const out = [];
   let m;
-  while ((m = re.exec(htmlText)) !== null) {
-    out.push({ folder: m[1], yyyymmdd: m[2] });
-  }
+  while ((m = re.exec(htmlText)) !== null) out.push({ folder: m[1], yyyymmdd: m[2] });
   out.sort((a, b) => a.yyyymmdd.localeCompare(b.yyyymmdd));
   return out;
 }
 
 function parseApacheListingForCycles(htmlText) {
-  // Expect entries like: petss.t00z.csv.tar.gz
   const re = /href="(petss\.t(\d{2})z\.csv\.tar\.gz)"/g;
   const out = [];
   let m;
-  while ((m = re.exec(htmlText)) !== null) {
-    out.push({ file: m[1], hh: m[2] });
-  }
-  // prefer latest cycle
-  const order = ["18", "12", "06", "00"];
+  while ((m = re.exec(htmlText)) !== null) out.push({ file: m[1], hh: m[2] });
+
+  const order = ["18", "12", "06", "00"]; // prefer latest
   out.sort((a, b) => order.indexOf(a.hh) - order.indexOf(b.hh));
   return out;
 }
 
 function findStationCsvFile(extractRoot, stid) {
-  // Search extracted files for any .csv containing the stid in filename
   const matches = [];
-
   function walk(dir) {
     for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, ent.name);
@@ -118,112 +108,179 @@ function findStationCsvFile(extractRoot, stid) {
       }
     }
   }
-
   walk(extractRoot);
 
-  if (matches.length === 0) {
-    // fallback: maybe the tarball is organized with a stations.csv + filter inside
-    // try any csv that looks like "petss_stations.csv" or "stations.csv"
-    const fallback = [];
-
+  if (!matches.length) {
+    const allCsv = [];
     function walk2(dir) {
       for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, ent.name);
         if (ent.isDirectory()) walk2(full);
         else if (ent.isFile()) {
           const n = ent.name.toLowerCase();
-          if (n.endsWith(".csv")) fallback.push(full);
+          if (n.endsWith(".csv")) allCsv.push(full);
         }
       }
     }
-
     walk2(extractRoot);
-
-    return { primary: null, allCsv: fallback };
+    return { primary: null, allCsv };
   }
 
-  // If multiple, prefer shortest path / most direct name.
   matches.sort((a, b) => a.length - b.length);
   return { primary: matches[0], allCsv: matches };
 }
 
-function parseStationCsv(csvText) {
-  // Expected header similar to:
-  // Date(GMT), Surge,  Tide,   Obs,  Fcst,  Anom,Fst90%,Fst10%
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+function looksLikeDataRowFirstCol(x) {
+  const s = String(x || "").trim();
+  if (!s) return false;
 
-  if (lines.length < 2) {
-    throw new Error("Station CSV appears empty.");
-  }
+  // PETSS-ish examples:
+  // "01/25 06Z"
+  // "2026-01-31 18:00"
+  // "20260131 18Z" / "20260131 18"
+  if (/^\d{2}\/\d{2}\s+\d{2}Z$/i.test(s)) return true;
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) return true;
+  if (/^\d{8}\s+\d{2}Z?$/i.test(s)) return true;
+  return false;
+}
 
-  const headerIdx = lines.findIndex((l) => /date\s*\(gmt\)/i.test(l));
-  if (headerIdx === -1) {
-    // Sometimes header could be "Date(GMT),Surge,Tide,Obs,Fcst,Anom,Fst90%,Fst10%"
-    // or "Date (GMT)" with a space.
-    const altIdx = lines.findIndex((l) => /date\s*\(?\s*gmt\s*\)?/i.test(l));
-    if (altIdx === -1) {
-      throw new Error("Could not locate a Date(GMT) header line in station CSV.");
+function detectDelimiter(sampleLine) {
+  if (sampleLine.includes(",")) return ",";
+  // lots of PETSS dumps are whitespace-separated
+  if (/\s+/.test(sampleLine)) return "ws";
+  return ",";
+}
+
+function splitLine(line, delim) {
+  if (delim === ",") return line.split(",").map((s) => s.trim());
+  // whitespace
+  return line.trim().split(/\s+/).map((s) => s.trim());
+}
+
+function toNum(x) {
+  if (x === undefined || x === null) return null;
+  const v = String(x).trim();
+  if (!v || v.toLowerCase() === "nan" || v === "--") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseStationFile(text) {
+  // Normalize and keep non-empty lines
+  const rawLines = text.split(/\r?\n/);
+  const lines = rawLines.map((l) => l.trim()).filter((l) => l.length > 0);
+
+  if (lines.length < 2) throw new Error("Station file appears empty.");
+
+  // Find a header line if it exists (Date(GMT) or similar)
+  let headerIdx = lines.findIndex((l) => /date\s*\(\s*gmt\s*\)/i.test(l));
+  if (headerIdx === -1) headerIdx = lines.findIndex((l) => /^date\b/i.test(l));
+  if (headerIdx === -1) headerIdx = lines.findIndex((l) => /valid/i.test(l) && /time/i.test(l));
+
+  // If header exists, use it. If not, infer schema from the first data-ish line.
+  if (headerIdx !== -1) {
+    const headerLine = lines[headerIdx];
+    const delim = detectDelimiter(headerLine);
+    const header = splitLine(headerLine, delim).filter(Boolean);
+
+    const dataLines = lines.slice(headerIdx + 1);
+    const rows = [];
+
+    for (const l of dataLines) {
+      const parts = splitLine(l, delim);
+      if (parts.length < 2) continue;
+
+      const obj = {};
+      for (let i = 0; i < header.length && i < parts.length; i++) obj[header[i]] = parts[i];
+
+      const dateStr =
+        obj["Date(GMT)"] ||
+        obj["Date (GMT)"] ||
+        obj["Date"] ||
+        obj["ValidTime"] ||
+        obj["Valid_Time"] ||
+        parts[0];
+
+      rows.push({
+        date_gmt: dateStr,
+        surge_ft: toNum(obj["Surge"] ?? obj["Surge(ft)"] ?? parts[1]),
+        tide_ft: toNum(obj["Tide"] ?? obj["Tide(ft)"] ?? parts[2]),
+        obs_ft: toNum(obj["Obs"] ?? obj["Obs(ft)"] ?? parts[3]),
+        fcst_ft: toNum(obj["Fcst"] ?? obj["Fcst(ft)"] ?? parts[4]),
+        anom_ft: toNum(obj["Anom"] ?? obj["Anom(ft)"] ?? parts[5]),
+        fcst90_ft: toNum(obj["Fst90%"] ?? obj["Fcst90%"] ?? obj["Fst90"] ?? parts[6]),
+        fcst10_ft: toNum(obj["Fst10%"] ?? obj["Fcst10%"] ?? obj["Fst10"] ?? parts[7]),
+        raw: obj,
+      });
     }
-    return parseStationCsv(lines.slice(altIdx).join("\n"));
+
+    if (!rows.length) throw new Error("Parsed 0 rows from header-based station file.");
+    return { header, rows, mode: "header" };
   }
 
-  const header = lines[headerIdx]
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // No header: infer from first data-like line.
+  // Find first line whose first token looks like a date/time.
+  const firstDataIdx = lines.findIndex((l) => {
+    const delim = detectDelimiter(l);
+    const parts = splitLine(l, delim);
+    return looksLikeDataRowFirstCol(parts[0]);
+  });
 
-  const dataLines = lines.slice(headerIdx + 1);
+  if (firstDataIdx === -1) {
+    throw new Error("Could not locate any recognizable data rows (no header, no date-like first column).");
+  }
+
+  const sample = lines[firstDataIdx];
+  const delim = detectDelimiter(sample);
+
+  // Assume canonical order when headerless:
+  // date, surge, tide, obs, fcst, anom, fcst90, fcst10
+  const header = ["date_gmt", "surge_ft", "tide_ft", "obs_ft", "fcst_ft", "anom_ft", "fcst90_ft", "fcst10_ft"];
 
   const rows = [];
-  for (const l of dataLines) {
-    // Some rows might have repeated spaces after commas; split by comma first.
-    const parts = l.split(",").map((s) => s.trim());
-    if (parts.length < 2) continue;
+  for (let i = firstDataIdx; i < lines.length; i++) {
+    const l = lines[i];
+    const parts = splitLine(l, delim);
 
-    const obj = {};
-    for (let i = 0; i < header.length && i < parts.length; i++) {
-      obj[header[i]] = parts[i];
+    // Some formats split date into 2 columns (e.g., "01/25" "06Z")
+    // If first two tokens make the "01/25 06Z" pattern, stitch them.
+    let dateStr = parts[0];
+    let offset = 0;
+
+    if (parts.length >= 2 && /^\d{2}\/\d{2}$/.test(parts[0]) && /^\d{2}Z$/i.test(parts[1])) {
+      dateStr = `${parts[0]} ${parts[1]}`;
+      offset = 1;
     }
 
-    // Normalize fields into a stable schema:
-    // Keep the original header keys too (useful for debugging), but provide canonical names.
-    const dateStr =
-      obj["Date(GMT)"] ||
-      obj["Date (GMT)"] ||
-      obj["Date"] ||
-      parts[0];
-
-    function toNum(x) {
-      if (x === undefined || x === null) return null;
-      const v = String(x).trim();
-      if (!v || v.toLowerCase() === "nan") return null;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
+    // If "YYYYMMDD HH" style, stitch too
+    if (parts.length >= 2 && /^\d{8}$/.test(parts[0]) && /^\d{2}Z?$/i.test(parts[1])) {
+      dateStr = `${parts[0]} ${parts[1].toUpperCase().replace(/Z?$/, "Z")}`;
+      offset = 1;
     }
 
-    const canonical = {
-      date_gmt: dateStr,          // e.g. "01/25 06Z"
-      surge_ft: toNum(obj["Surge"] ?? obj["Surge(ft)"] ?? parts[1]),
-      tide_ft: toNum(obj["Tide"] ?? obj["Tide(ft)"]),
-      obs_ft: toNum(obj["Obs"] ?? obj["Obs(ft)"]),
-      fcst_ft: toNum(obj["Fcst"] ?? obj["Fcst(ft)"]),
-      anom_ft: toNum(obj["Anom"] ?? obj["Anom(ft)"]),
-      fcst90_ft: toNum(obj["Fst90%"] ?? obj["Fcst90%"] ?? obj["Fst90"]),
-      fcst10_ft: toNum(obj["Fst10%"] ?? obj["Fcst10%"] ?? obj["Fst10"]),
-      raw: obj, // preserve raw mapping for safety
-    };
+    // Need at least date + 4 numbers to be useful
+    if (!looksLikeDataRowFirstCol(dateStr) && !/^\d{2}\/\d{2}\s+\d{2}Z$/i.test(dateStr) && !/^\d{8}\s+\d{2}Z$/i.test(dateStr)) {
+      // skip junk lines
+      continue;
+    }
 
-    rows.push(canonical);
+    const nums = parts.slice(1 + offset);
+
+    rows.push({
+      date_gmt: dateStr,
+      surge_ft: toNum(nums[0]),
+      tide_ft: toNum(nums[1]),
+      obs_ft: toNum(nums[2]),
+      fcst_ft: toNum(nums[3]),
+      anom_ft: toNum(nums[4]),
+      fcst90_ft: toNum(nums[5]),
+      fcst10_ft: toNum(nums[6]),
+      raw: { parts },
+    });
   }
 
-  if (rows.length === 0) {
-    throw new Error("Parsed 0 rows from station CSV.");
-  }
-
-  return { header, rows };
+  if (!rows.length) throw new Error("Parsed 0 rows from headerless station file.");
+  return { header, rows, mode: "inferred" };
 }
 
 async function main() {
@@ -235,28 +292,20 @@ async function main() {
   ensureDir(OUT_DIR);
 
   // 1) Find latest petss.YYYYMMDD directory
-  const prodListingBuf = await httpGet(NOMADS_BASE);
-  const prodListing = prodListingBuf.toString("utf8");
+  const prodListing = (await httpGet(NOMADS_BASE)).toString("utf8");
   const dirs = parseApacheListingForPetssDirs(prodListing);
 
-  if (!dirs.length) {
-    throw new Error("Could not find any petss.YYYYMMDD directories on NOMADS.");
-  }
+  if (!dirs.length) throw new Error("Could not find any petss.YYYYMMDD directories on NOMADS.");
 
-  const latestDir = dirs[dirs.length - 1].folder; // already sorted
+  const latestDir = dirs[dirs.length - 1].folder;
   const dirUrl = NOMADS_BASE + latestDir;
   console.log(`Latest PETSS prod dir: ${latestDir}`);
 
-  // 2) Pick latest available cycle tarball (t18z > t12z > t06z > t00z)
-  const dirListingBuf = await httpGet(dirUrl);
-  const dirListing = dirListingBuf.toString("utf8");
+  // 2) Pick latest available cycle tarball
+  const dirListing = (await httpGet(dirUrl)).toString("utf8");
   const cycles = parseApacheListingForCycles(dirListing);
+  if (!cycles.length) throw new Error(`No petss.t??z.csv.tar.gz found in ${dirUrl}`);
 
-  if (!cycles.length) {
-    throw new Error(`No petss.t??z.csv.tar.gz found in ${dirUrl}`);
-  }
-
-  // cycles sorted by our preference ordering already (18 first)
   const chosen = cycles[0];
   const tarUrl = dirUrl + chosen.file;
   console.log(`Chosen cycle tarball: ${chosen.file}`);
@@ -265,38 +314,52 @@ async function main() {
   // 3) Download tarball to temp
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "petss-"));
   const tarPath = path.join(tmpRoot, chosen.file);
-  const tarBuf = await httpGet(tarUrl);
-  fs.writeFileSync(tarPath, tarBuf);
+  fs.writeFileSync(tarPath, await httpGet(tarUrl));
 
   // 4) Extract tarball
   const extractDir = path.join(tmpRoot, "extract");
   fs.mkdirSync(extractDir);
-  try {
-    execSync(`tar -xzf "${tarPath}" -C "${extractDir}"`, { stdio: "pipe" });
-  } catch (e) {
-    throw new Error(
-      `Failed to extract tarball via tar. ${e?.message || e}`
-    );
-  }
+  execSync(`tar -xzf "${tarPath}" -C "${extractDir}"`, { stdio: "pipe" });
 
   // 5) Locate station csv
   const found = findStationCsvFile(extractDir, STID);
   if (!found.primary) {
-    const sample = found.allCsv.slice(0, 20).map((p) => path.basename(p));
+    const sample = found.allCsv.slice(0, 30).map((p) => path.basename(p));
     throw new Error(
       `Could not find a station CSV containing "${STID}" in filename after extracting tarball.\n` +
         `Found CSV files (sample): ${sample.join(", ")}`
     );
   }
-
   console.log(`Station CSV file: ${found.primary}`);
 
-  const stationCsvText = fs.readFileSync(found.primary, "utf8");
+  const stationText = fs.readFileSync(found.primary, "utf8");
 
-  // 6) Parse & write outputs
-  const parsed = parseStationCsv(stationCsvText);
+  // Write raw station file as-is (so you can inspect in repo if needed)
+  fs.writeFileSync(OUT_CSV, stationText, "utf8");
 
-  fs.writeFileSync(OUT_CSV, stationCsvText, "utf8");
+  // 6) Parse & write outputs (with debug-on-fail)
+  let parsed;
+  try {
+    parsed = parseStationFile(stationText);
+  } catch (err) {
+    // Save debug snippet for easy troubleshooting from Actions artifacts / committed file (if you want to commit it)
+    const lines = stationText.split(/\r?\n/);
+    const head = lines.slice(0, 120).join("\n");
+    fs.writeFileSync(
+      OUT_DEBUG,
+      [
+        `PARSE FAILED for STID=${STID}`,
+        `Error: ${err?.message || err}`,
+        "",
+        "----- FIRST 120 LINES OF STATION FILE -----",
+        head,
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    throw err;
+  }
+
   fs.writeFileSync(OUT_JSON, JSON.stringify(parsed.rows, null, 2) + "\n", "utf8");
 
   const meta = {
@@ -309,6 +372,7 @@ async function main() {
     source_tar_url: tarUrl,
     updated_utc_iso: new Date().toISOString(),
     row_count: parsed.rows.length,
+    parse_mode: parsed.mode,
     header: parsed.header,
   };
   fs.writeFileSync(OUT_META, JSON.stringify(meta, null, 2) + "\n", "utf8");
@@ -318,8 +382,9 @@ async function main() {
   console.log(`- ${OUT_JSON}`);
   console.log(`- ${OUT_META}`);
   console.log(`Rows: ${parsed.rows.length}`);
+  console.log(`Parse mode: ${parsed.mode}`);
 
-  // Clean up temp (best-effort)
+  // Cleanup temp
   try {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   } catch (_) {}
