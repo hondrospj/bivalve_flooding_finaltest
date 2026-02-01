@@ -1,22 +1,23 @@
 // tools/update_petss_forecast.js
-// Robust PETSS scraper: handles <pre> and non-<pre> layouts.
+// Robust PETSS scraper (static=1 + tolerant parsing).
+//
 // Writes:
-//   data/petss_forecast_<stid>_mllw.json
+//   data/petss_forecast_<stid>_<datum>.json
+//
 // On parse failure, writes:
 //   data/petss_raw.html
 
 import fs from "fs";
 import path from "path";
 
-const STID = process.env.PETSS_STID || "8531804"; // change default if you want
+const STID = process.env.PETSS_STID || "8536889"; // ✅ aligned default
 const DATUM = process.env.PETSS_DATUM || "MLLW";
 const SHOW = process.env.PETSS_SHOW || "1-1-1-1-0-1-1-1";
 
-// Example:
-// https://slosh.nws.noaa.gov/petss/index.php?stid=8531804&datum=MLLW&show=1-1-1-1-0-1-1-1
+// ✅ IMPORTANT: static=1 makes PETSS include the plain-text table in HTML
 const URL = `https://slosh.nws.noaa.gov/petss/index.php?stid=${encodeURIComponent(
   STID
-)}&datum=${encodeURIComponent(DATUM)}&show=${encodeURIComponent(SHOW)}`;
+)}&datum=${encodeURIComponent(DATUM)}&show=${encodeURIComponent(SHOW)}&static=1`;
 
 const outDir = "data";
 const outJson = path.join(outDir, `petss_forecast_${STID}_${DATUM.toLowerCase()}.json`);
@@ -27,7 +28,7 @@ function stripTags(html) {
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|tr)>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h1|h2|h3|h4|h5|h6)>/gi, "\n")
     .replace(/<[^>]+>/g, "");
 }
 
@@ -38,49 +39,55 @@ function extractDataText(html) {
     return preMatch[1].trim();
   }
 
-  // 2) Fallback: strip tags and look for the "Date(GMT)" block in plain text
+  // 2) Fallback: strip tags and find the "Date(GMT)" header
   const text = stripTags(html);
-  const idx = text.indexOf("Date(GMT)");
+
+  const idx = text.search(/Date\s*\(GMT\)/i);
   if (idx !== -1) {
-    // Take a generous slice after the header
-    const slice = text.slice(idx).trim();
-    return slice;
+    // take a generous slice starting at Date(GMT)
+    return text.slice(idx).trim();
   }
 
   return null;
 }
 
 function parsePetssTable(textBlock) {
-  // We expect a header line with columns like:
+  // PETSS header usually includes:
   // Date(GMT), Surge, Tide, Obs, Fcst, Anom, Fst90%, Fst10%
-  // Then many CSV-like rows.
+  // then rows like:
+  // 01/25 06Z, -0.3, 3.9, 4.3, 4.3, 0.7, 4.2, 4.3
+
   const lines = textBlock
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const headerIdx = lines.findIndex((l) => l.startsWith("Date(GMT)"));
+  // ✅ Find header line even if it isn't at column 0
+  const headerIdx = lines.findIndex((l) => /Date\s*\(GMT\)/i.test(l));
   if (headerIdx === -1) return null;
 
-  const header = lines[headerIdx]
+  // ✅ Normalize header line to start at Date(GMT)
+  let headerLine = lines[headerIdx];
+  const m = headerLine.match(/Date\s*\(GMT\)[\s\S]*/i);
+  if (m) headerLine = m[0];
+
+  const header = headerLine
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
   const rows = [];
+
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i];
 
-    // Stop if we hit obvious footer content
+    // stop at obvious footers
     if (/copyright|noaa|national weather service|last updated/i.test(line)) break;
 
-    // PETSS rows usually look like:
-    // 01/25 06Z, -0.3, 3.9, 4.3, 4.3, 0.7, 4.2, 4.3
-    if (!/^\d{2}\/\d{2}\s+\d{2}Z,/.test(line)) continue;
+    // ✅ PETSS row signature: "MM/DD HHZ,"
+    if (!/^\d{2}\/\d{2}\s+\d{2}Z\s*,/i.test(line)) continue;
 
     const parts = line.split(",").map((s) => s.trim());
-
-    // If columns mismatch, skip
     if (parts.length < 2) continue;
 
     const obj = {};
@@ -88,10 +95,9 @@ function parsePetssTable(textBlock) {
       const key = header[c];
       const val = parts[c];
 
-      if (key === "Date(GMT)") {
+      if (/Date\s*\(GMT\)/i.test(key)) {
         obj.date_gmt = val;
       } else {
-        // numeric fields
         const num = Number(val);
         obj[key.toLowerCase().replace(/[^a-z0-9]+/g, "_")] = Number.isFinite(num) ? num : val;
       }
@@ -120,7 +126,6 @@ async function main() {
 
   const res = await fetch(URL, {
     headers: {
-      // Some sites serve different HTML without a UA
       "User-Agent": "Mozilla/5.0 (GitHub Actions) PETSS-scraper",
       "Accept": "text/html,application/xhtml+xml"
     }
@@ -134,14 +139,14 @@ async function main() {
   }
 
   const textBlock = extractDataText(html);
-
   if (!textBlock) {
     fs.writeFileSync(outRaw, html);
-    throw new Error(`Could not find PETSS data block (no <pre>, no Date(GMT)). Saved raw HTML to ${outRaw}`);
+    throw new Error(
+      `Could not find PETSS data block (no <pre>, no Date(GMT)). Saved raw HTML to ${outRaw}`
+    );
   }
 
   const parsed = parsePetssTable(textBlock);
-
   if (!parsed) {
     fs.writeFileSync(outRaw, html);
     throw new Error(`Found text but could not parse PETSS rows. Saved raw HTML to ${outRaw}`);
