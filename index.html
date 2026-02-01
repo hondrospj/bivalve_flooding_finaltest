@@ -959,9 +959,11 @@ async function fetchPETSSForecast_MLLW({ hours = 48 } = {}){
     null;
 
   const ptsAll = normalizePetssJsonToPoints(json);
-  const pts = clipHoursFromFirst(ptsAll, hours);
 
-  return { issuedTime, points: pts, urlUsed: url };
+  // IMPORTANT:
+  // Do NOT clip to "first timestamp + hours".
+  // The chart itself already slices/resamples to the correct window (now → now+72h).
+  return { issuedTime, points: ptsAll, urlUsed: url };
 }
 
 
