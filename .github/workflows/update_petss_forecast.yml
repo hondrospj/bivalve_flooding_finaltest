@@ -3,7 +3,6 @@ name: Update PETSS Forecast JSON
 on:
   workflow_dispatch:
   schedule:
-    # every 15 minutes
     - cron: "*/15 * * * *"
 
 permissions:
@@ -30,18 +29,18 @@ jobs:
         run: |
           set -e
 
-          echo "Running PETSS fetch script…"
+          echo "Running PETSS forecast script…"
 
           mkdir -p data
 
-          node tools/update_petss_forecast.mjs
+          node tools/update_petss_forecast.js
 
           if [ ! -s data/petss_forecast_8536889_mllw.json ]; then
             echo "ERROR: PETSS JSON was not created"
             exit 1
           fi
 
-          echo "PETSS JSON created successfully:"
+          echo "PETSS forecast written:"
           ls -lh data/petss_forecast_8536889_mllw.json
 
       - name: Commit and push if changed
