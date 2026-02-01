@@ -3,7 +3,7 @@ name: Update PETSS Forecast
 on:
   workflow_dispatch:
   schedule:
-    # Every 3 hours (UTC). Adjust as you like.
+    # Every 3 hours (UTC). Change whenever you want.
     - cron: "15 */3 * * *"
 
 permissions:
@@ -22,114 +22,34 @@ jobs:
         with:
           node-version: "20"
 
-      # ✅ This step NAME is what you see in the Actions UI.
-      # If you ever "don't see it", it means your YAML didn't deploy
-      # (wrong branch / wrong file path / workflow not committed).
-      - name: Run PETSS forecast script (debug)
+      - name: Run PETSS forecast updater
         env:
           PETSS_STID: "8536889"
           PETSS_DATUM: "MLLW"
-        shell: bash
         run: |
-          set -euo pipefail
-          echo "Running PETSS forecast script…"
-          echo "STID=${PETSS_STID}"
-          echo "DATUM=${PETSS_DATUM}"
-          echo "Node: $(node -v)"
-          echo "PWD: $(pwd)"
-          echo "Repo status before:"
-          git status --porcelain || true
-
-          # Run the script but capture failure so we can print debug context first.
-          FAILED=0
-          node tools/update_petss_forecast.js || FAILED=1
-
-          echo ""
-          echo "===== DEBUG DUMP (post-run) ====="
-
-          echo ""
-          echo "----- data/ directory listing -----"
-          ls -lah data || true
-
-          echo ""
-          echo "----- Head: data/petss_forecast.csv -----"
-          if [ -f data/petss_forecast.csv ]; then
-            head -n 80 data/petss_forecast.csv
-          else
-            echo "MISSING: data/petss_forecast.csv"
-          fi
-
-          echo ""
-          echo "----- Head: data/petss_forecast.json -----"
-          if [ -f data/petss_forecast.json ]; then
-            head -c 4000 data/petss_forecast.json; echo ""
-          else
-            echo "MISSING: data/petss_forecast.json"
-          fi
-
-          echo ""
-          echo "----- Head: data/petss_meta.json -----"
-          if [ -f data/petss_meta.json ]; then
-            cat data/petss_meta.json
-          else
-            echo "MISSING: data/petss_meta.json"
-          fi
-
-          echo ""
-          echo "----- Head: data/petss_station_debug.txt (if present) -----"
-          if [ -f data/petss_station_debug.txt ]; then
-            sed -n '1,200p' data/petss_station_debug.txt
-          else
-            echo "no data/petss_station_debug.txt"
-          fi
-
-          echo ""
-          echo "----- Head: data/petss_raw.html (if present) -----"
-          if [ -f data/petss_raw.html ]; then
-            sed -n '1,120p' data/petss_raw.html
-          else
-            echo "no data/petss_raw.html"
-          fi
-
-          echo ""
-          echo "Repo status after:"
-          git status --porcelain || true
-
-          # If the script failed, fail the step AFTER dumping debug.
-          if [ "$FAILED" -eq 1 ]; then
-            echo ""
-            echo "PETSS script failed (see debug above)."
-            exit 1
-          fi
-
-      # ✅ Upload debug files even if the run fails, so you can download them from Actions.
-      - name: Upload PETSS debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: petss-debug
-          path: |
-            data/petss_raw.html
-            data/petss_station_debug.txt
-            data/petss_forecast.csv
-            data/petss_forecast.json
-            data/petss_meta.json
-          if-no-files-found: ignore
+          set -e
+          echo "Running PETSS forecast updater…"
+          node tools/update_petss_forecast.js
 
       - name: Commit & push if changed
-        shell: bash
         run: |
-          set -euo pipefail
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Only add the files your site depends on
-          git add data/petss_forecast.csv data/petss_forecast.json data/petss_meta.json || true
+          git add \
+            data/petss_ensemble_mean.csv \
+            data/petss_ensemble_mean.json \
+            data/petss_meta.json \
+            data/petss_station_raw.txt \
+            data/petss_debug_info.json \
+            data/petss_error.txt \
+            || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "Update PETSS forecast"
+          git commit -m "Update PETSS ensemble mean forecast"
           git push
