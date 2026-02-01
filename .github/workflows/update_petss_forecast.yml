@@ -26,17 +26,27 @@ jobs:
           node-version: "20"
 
       - name: Generate PETSS forecast JSON
+        env:
+          PETSS_STID: "8536889"
+          PETSS_DATUM: "MLLW"
+          PETSS_SHOW: "1-1-1-1-0-1-1-1"
         run: |
           set -e
-
           echo "Running PETSS forecast script…"
-
           mkdir -p data
 
           node tools/update_petss_forecast.js
 
           if [ ! -s data/petss_forecast_8536889_mllw.json ]; then
             echo "ERROR: PETSS JSON was not created"
+            echo "Contents of data/:"
+            ls -lah data || true
+
+            if [ -f data/petss_raw.html ]; then
+              echo "---- petss_raw.html (first 80 lines) ----"
+              sed -n '1,80p' data/petss_raw.html || true
+            fi
+
             exit 1
           fi
 
