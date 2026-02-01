@@ -888,25 +888,81 @@ async function loadDailyTidesFromTXT(){
   DAILY_EVENTS_NAVD = buildDailyEventsFromDailyTides(DAILY_TIDES);
   setTXTStatus(""); // suppress TXT OK message
 }
+// --- PETSS: try multiple possible output filenames (works on Pages + local) ---
+const PETSS_JSON_CANDIDATES = [
+  "data/petss_forecast.json",
+  "./data/petss_forecast.json",
+  "/data/petss_forecast.json",
 
-      async function fetchPETSSForecast_MLLW({ hours = 48 } = {}){
-  // Your site-hosted JSON (no CORS issues)
-  const url = `data/petss_forecast_8536889_mllw.json?v=${Date.now()}`;
+  // common variants if you name files per-station:
+  `data/petss_forecast_${COOPS_STATION}_mllw.json`,
+  `./data/petss_forecast_${COOPS_STATION}_mllw.json`,
+  `/data/petss_forecast_${COOPS_STATION}_mllw.json`,
 
-  const res = await fetch(url, { cache: "no-store" });
-  if(!res.ok) throw new Error("PETSS JSON fetch failed " + res.status);
+  // keep your old guess as a last resort
+  "data/petss_forecast_8536889_mllw.json"
+];
 
-  const j = await res.json();
-  const pts = (j?.points || [])
-    .map(p => ({ t: p.t, ft: Number(p.fcst) }))   // <-- use total water level forecast
-    .filter(p => p.t && Number.isFinite(p.ft))
-    .sort((a,b)=> new Date(a.t) - new Date(b.t));
+// returns parsed points in the format your chart expects: [{t, ft}]
+function normalizePetssJsonToPoints(json){
+  // Option A: { points: [{t, fcst, ...}, ...] }
+  if(Array.isArray(json?.points)){
+    return json.points
+      .map(p => ({ t: p.t, ft: Number(p.fcst ?? p.twl ?? p.value) }))
+      .filter(p => p.t && Number.isFinite(p.ft))
+      .sort((a,b)=> new Date(a.t) - new Date(b.t));
+  }
 
-  // Clip again client-side just in case
-  const clipped = clipHoursFromFirst(pts, hours);
+  // Option B: [{t, fcst}, ...]
+  if(Array.isArray(json)){
+    return json
+      .map(p => ({ t: p.t ?? p.time ?? p.validTime, ft: Number(p.fcst ?? p.twl ?? p.value ?? p.primary) }))
+      .filter(p => p.t && Number.isFinite(p.ft))
+      .sort((a,b)=> new Date(a.t) - new Date(b.t));
+  }
 
-  return { issuedTime: j?.model_time_utc || j?.fetched_utc || null, points: clipped };
+  // Option C: { data: [...] }
+  if(Array.isArray(json?.data)){
+    return json.data
+      .map(p => ({ t: p.t ?? p.time ?? p.validTime, ft: Number(p.fcst ?? p.twl ?? p.value ?? p.primary) }))
+      .filter(p => p.t && Number.isFinite(p.ft))
+      .sort((a,b)=> new Date(a.t) - new Date(b.t));
+  }
+
+  return [];
 }
+
+async function fetchFirstOkJson(urls){
+  const errs = [];
+  for(const u of urls){
+    try{
+      const res = await fetch(`${u}?v=${Date.now()}`, { cache:"no-store" });
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = await res.json();
+      return { url: u, json: j };
+    }catch(e){
+      errs.push(`${u} (${e?.message || e})`);
+    }
+  }
+  throw new Error("PETSS JSON not found. Tried: " + errs.join(" | "));
+}
+
+async function fetchPETSSForecast_MLLW({ hours = 48 } = {}){
+  const { url, json } = await fetchFirstOkJson(PETSS_JSON_CANDIDATES);
+
+  const issuedTime =
+    json?.model_time_utc ||
+    json?.issued_utc ||
+    json?.fetched_utc ||
+    json?.issuedTime ||
+    null;
+
+  const ptsAll = normalizePetssJsonToPoints(json);
+  const pts = clipHoursFromFirst(ptsAll, hours);
+
+  return { issuedTime, points: pts, urlUsed: url };
+}
+
 
 /* =========================
 USGS IV fetch — STRICTLY tidal elevation 72279 (not discharge)
@@ -2475,7 +2531,6 @@ async function updateLiveAndAnnualCounts(){
   renderAnnual();
 }
 
-
 /* =========================
 Timeseries update (observed + predictions)
 - Observed: last 24h
@@ -2490,26 +2545,31 @@ async function updateTimeseries(){
     startISO: start.toISOString(),
     endISO: end.toISOString()
   });
-  STATE.obs24Navd = obs;
+  STATE.obs24Navd = obs || [];
 
-  // Forecast: NWPS official (MLLW)
+  // Forecast: PETSS (MLLW)
   try {
-const { issuedTime, points } = await fetchPETSSForecast_MLLW({ hours: 48 });
-STATE.pred72Mllw = points;
+    const { issuedTime, points, urlUsed } = await fetchPETSSForecast_MLLW({ hours: 48 });
+    STATE.pred72Mllw = points || [];
 
-
-    fcNote.textContent = points.length
-      ? (issuedTime ? `NOAA/NWPS official forecast issued: ${fmtESTFull(issuedTime)}` : "")
-      : "NOAA/NWPS forecast returned no points.";
+    if (STATE.pred72Mllw.length) {
+      fcNote.textContent =
+        (issuedTime ? `NOAA/PETSS forecast issued: ${fmtESTFull(issuedTime)}` : "NOAA/PETSS forecast loaded") +
+        ` · Source: ${urlUsed}`;
+    } else {
+      fcNote.textContent = `NOAA/PETSS returned no points · Source: ${urlUsed}`;
+    }
   } catch (e) {
-    console.error("NWPS forecast failed:", e);
+    console.error("PETSS forecast failed:", e);
     STATE.pred72Mllw = [];
-    fcNote.textContent = "NOAA/NWPS forecast unavailable";
+    fcNote.textContent = "NOAA/PETSS forecast unavailable";
   }
 
-  updatePred24RangeCard();
+  // ✅ IMPORTANT: actually render the chart + 24h range card after STATE updates
   updateTsChartFromState();
+  updatePred24RangeCard();
 }
+
 
 /* =========================
 JSON-BACKED HISTORY (NAVD88 PEAKS)
