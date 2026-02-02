@@ -535,6 +535,43 @@ const THRESH = {
   NAVD88:{ minorLow:4.19, moderateLow:5.19, majorLow:6.19 }
 };
 
+      const HOUR_MS = 60 * 60 * 1000;
+
+function floorToHourMs(tMs){
+  return Math.floor(tMs / HOUR_MS) * HOUR_MS;
+}
+
+function buildHourlyLabels(startISO, endISO){
+  const start = floorToHourMs(new Date(startISO).getTime());
+  const end   = floorToHourMs(new Date(endISO).getTime());
+  const labels = [];
+  for(let t = start; t <= end; t += HOUR_MS){
+    labels.push(new Date(t).toISOString());
+  }
+  return labels;
+}
+
+// Pick the LAST value observed within each hour (looks best for water level)
+function seriesToHourlyLast(series){
+  const m = new Map(); // hourMs -> ft
+  for(const p of (series || [])){
+    const tMs = new Date(p.t).getTime();
+    const ft  = Number(p.ft);
+    if(!Number.isFinite(tMs) || !Number.isFinite(ft)) continue;
+    m.set(floorToHourMs(tMs), ft); // later points overwrite earlier => "last in hour"
+  }
+  return m;
+}
+
+// Snap a series to the hourly labels (no interpolation, just exact hour hits)
+function mapToHourlyValues(labels, hourMap){
+  return labels.map(iso=>{
+    const h = floorToHourMs(new Date(iso).getTime());
+    return hourMap.has(h) ? hourMap.get(h) : null;
+  });
+}
+
+
 /* Peak counting settings */
 const PEAK_MIN_SEP_MINUTES = 300;
 
@@ -1734,52 +1771,55 @@ function updateTsChartFromState(){
   const endISO = nowISO();
   const startObsISO = new Date(new Date(endISO).getTime() - 24*3600*1000).toISOString();
 
-  /* Observed: force 15-min grid + spike removal (NAVD) */
-  const obsGrid = buildFixedGrid15Min_fromAny(STATE.obs24Navd || [], startObsISO, endISO);
-  let obsValsNavd = obsGrid.values.map(v => (v===null ? null : v));
-  obsValsNavd = filterSpikes15Min(obsValsNavd, TS_MAX_DELTA_FT);
-  const obsValsDisplay = obsValsNavd.map(v => (v===null ? null : toDisplayFtFromNavd(v)));
+  // Forecast window: start at next hour after last obs timestamp (or now)
+  const lastObsT = (STATE.obs24Navd && STATE.obs24Navd.length)
+    ? STATE.obs24Navd[STATE.obs24Navd.length - 1].t
+    : endISO;
 
-  /* Predictions: RAW PETSS points (MLLW) — NO resampling */
-  const predStartISO = obsGrid.labels[obsGrid.labels.length-1] || endISO;
-  const predEndISO = new Date(new Date(predStartISO).getTime() + 72*3600*1000).toISOString();
+  const predStartMs = floorToHourMs(new Date(lastObsT).getTime() + 1); // next hour
+  const predStartISO = new Date(predStartMs).toISOString();
+  const predEndISO   = new Date(predStartMs + 72*3600*1000).toISOString();
 
+  // ✅ ONE axis: hourly labels covering obs + forecast
+  const labels = buildHourlyLabels(startObsISO, predEndISO);
+
+  // ---- Observed (NAVD88) -> hourly (last-in-hour) -> display datum
+  const obsMapNavd = seriesToHourlyLast(STATE.obs24Navd || []);
+  let obsValsNavd = mapToHourlyValues(labels, obsMapNavd);
+
+  // optional: spike filter works fine on hourly too
+  obsValsNavd = filterSpikes15Min(obsValsNavd, TS_MAX_DELTA_FT); // name is old, but logic OK
+
+  const obsValsDisplay = obsValsNavd.map(v => (v==null ? null : toDisplayFtFromNavd(v)));
+
+  // ---- Predicted (MLLW) -> hourly (last-in-hour) -> display datum
+  // IMPORTANT: only keep points inside [predStartISO, predEndISO]
   const predRaw = (STATE.pred72Mllw || [])
-    .map(p => ({ t: p.t, ft: Number(p.ft) }))
-    .filter(p => {
-      if(!p.t || !Number.isFinite(p.ft)) return false;
-      const tt = new Date(p.t).getTime();
-      return Number.isFinite(tt)
-        && tt >= new Date(predStartISO).getTime()
-        && tt <= new Date(predEndISO).getTime();
-    })
-    .sort((a,b)=> new Date(a.t) - new Date(b.t));
+    .map(p => ({ t:p.t, ft:Number(p.ft) }))
+    .filter(p=>{
+      const tMs = new Date(p.t).getTime();
+      return p.t && Number.isFinite(p.ft) && Number.isFinite(tMs)
+        && tMs >= predStartMs
+        && tMs <= new Date(predEndISO).getTime();
+    });
 
-  const predLabels = predRaw.map(p => p.t);
-
-  let predValsMllw = predRaw.map(p => p.ft);
-
-  // Optional: keep spike filter (it now just filters big jumps between adjacent raw points)
+  const predMapMllw = seriesToHourlyLast(predRaw);
+  let predValsMllw = mapToHourlyValues(labels, predMapMllw);
   predValsMllw = filterSpikes15Min(predValsMllw, TS_MAX_DELTA_FT);
 
-  const predValsDisplay = predValsMllw.map(v => (v===null ? null : toDisplayFtFromMllw(v)));
+  const predValsDisplay = predValsMllw.map(v => (v==null ? null : toDisplayFtFromMllw(v)));
 
-  /* Combine: obs labels + pred raw labels */
-  const labels = [...obsGrid.labels, ...predLabels];
-  const obsData = [...obsValsDisplay, ...Array(predLabels.length).fill(null)];
-  const predData = [...Array(obsGrid.labels.length).fill(null), ...predValsDisplay];
-
+  // ---- Plot
   ensureTsChart();
   tsChart.data.labels = labels;
-  tsChart.data.datasets[0].data = obsData;
-  tsChart.data.datasets[1].data = predData;
+  tsChart.data.datasets[0].data = obsValsDisplay;
+  tsChart.data.datasets[1].data = predValsDisplay;
 
   tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
   tsChart.options.scales.y.title.text = unitText();
 
   // ---- HARD SCALE Y TO INCLUDE THRESHOLDS ----
   const {minor, moderate, major} = thresholdsDisplay();
-
   const ys = [...obsValsDisplay, ...predValsDisplay].filter(v => Number.isFinite(v));
   ys.push(minor, moderate, major);
 
@@ -1799,6 +1839,7 @@ function updateTsChartFromState(){
 
   tsChart.update();
 }
+
 
 
 /* =========================
