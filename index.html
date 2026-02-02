@@ -11,385 +11,271 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
-  :root{
-    --bg:#0b1220;
-    --text:#eaf0ff;
-    --muted:#a9b6d3;
-    --line:rgba(255,255,255,.085);
-    --ok:#2dd4bf;
-    --minor:#fbbf24;
-    --moderate:#fb7185;
-    --major:#a78bfa;
-    --shadow:0 22px 70px rgba(0,0,0,.40);
-    --radius:18px;
-    --card:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
-    --card2:rgba(0,0,0,.18);
-  }
+/* =========================================================
+   PJ — LIVE CONDITIONS POLISH PATCH (STYLE ONLY)
+   Goals:
+   (1) "Forecasted flood windows" compact + smaller
+   (2) Minor/Moderate/Major never fall off screen
+   (3) Rename title to "48 hour flood outlook"
+   (4) Remove the bar + make outlook visually appealing (chips)
+   (5) Center Current Water Elevation tile
+   (6) Center Daily Range Max/Min inside its card
+   ========================================================= */
 
-  *{box-sizing:border-box}
-  body{
-    margin:0;
-    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-    background:
-      radial-gradient(1200px 650px at 15% -10%, rgba(34,211,238,.18), transparent 55%),
-      radial-gradient(1000px 600px at 92% 12%, rgba(167,139,250,.16), transparent 55%),
-      var(--bg);
-    color:var(--text);
-  }
-  .wrap{max-width:1200px;margin:0 auto;padding:16px 16px 28px}
-  a{color:inherit;text-decoration:none}
+/* ---------- 1) CENTER the CURRENT WATER ELEVATION tile ---------- */
+/* If you're using the liveGrid/heroMetric layout from earlier */
+.liveGrid{
+  grid-template-columns: 1fr;              /* stack so hero can be centered */
+  justify-items: center;
+}
+.heroMetric{
+  width: min(760px, 100%);
+  margin: 0 auto;
+  text-align: center;
+  align-items: center;
+  padding: 16px 16px;
+}
+.heroMetric .ml{ text-align:center; margin-bottom:10px; }
+.heroMetric .mv{ justify-content:center; }
+.heroMetric .ms{ text-align:center; }
 
-  .banner{
-    display:none;
-    border:1px solid rgba(255,255,255,.12);
-    background: rgba(251,113,133,.12);
-    border-radius:14px;
-    padding:12px 12px;
-    margin-bottom:12px;
-    box-shadow:var(--shadow);
-  }
-  .banner b{font-weight:950}
-  .banner .small{color:var(--muted);font-size:12.5px;margin-top:4px;line-height:1.25}
+/* If you still have the hero tile as a normal .metric in .metrics */
+.metrics{
+  justify-items:center;
+}
+.metrics .metric:first-child{
+  width:min(760px, 100%);
+  margin:0 auto;
+  text-align:center;
+}
 
-  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-  .brand{display:flex;align-items:center;gap:12px}
-  .brand img{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25)}
-  .brandTitle{display:flex;flex-direction:column;line-height:1.1}
-  .kicker{color:var(--muted);font-weight:850;font-size:12px;letter-spacing:.2px;text-transform:uppercase}
-  .name{font-size:18px;font-weight:950;letter-spacing:.2px}
-  .pill{
-    display:flex;align-items:center;gap:10px;
-    padding:10px 12px;border-radius:999px;
-    border:1px solid var(--line);
-    background:rgba(0,0,0,.16);
-    box-shadow:var(--shadow);
-    font-weight:950;font-size:12.5px;white-space:nowrap;
-  }
-  .dot{width:9px;height:9px;border-radius:999px;background:var(--ok);box-shadow:0 0 0 4px rgba(45,212,191,.16)}
+/* ---------- 2) RENAME the header + REMOVE bar ---------- */
+/* Works if your forecast header uses .fc48Title (from prior style) */
+.fc48Title{
+  font-size:0 !important;     /* hide existing text without changing HTML */
+  line-height:0 !important;
+  margin-bottom:8px;
+}
+.fc48Title::after{
+  content:"48 hour flood outlook";
+  font-size:12.5px;
+  line-height:1.2;
+  letter-spacing:.22px;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-weight:950;
+}
 
-  /* --- Mobile header overflow fix --- */
-  .brand, .brandTitle { min-width: 0; }
-  .kicker, .name { min-width: 0; }
-  .kicker, .name{
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  #lastPill, #stagePill, #datumBtn{ min-width:0; }
-  .pill{ max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+/* Hide the bar entirely (both your old bar and the "seg" system) */
+.fc48Bar,
+.fc48Bar *{
+  display:none !important;
+}
 
-  @media (max-width: 720px){
-    .top{
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      gap:10px;
-      text-align:center;
-    }
-    .brand{width:100%;justify-content:center;text-align:center}
-    .brandTitle{align-items:center;text-align:center}
-    .kicker, .name{
-      white-space:normal;
-      overflow:visible;
-      text-overflow:clip;
-    }
-    .top > div{
-      width:100%;
-      justify-content:center !important;
-      flex-wrap:wrap;
-    }
-    .pill, .btn{ max-width:100%; }
-  }
+/* Also hide any generic progress-looking bar you may still have */
+#fcBar, #fcBarWrap, .progressBar, .barRow{
+  display:none !important;
+}
 
-  .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:10px}
-  @media(max-width:980px){.grid{grid-template-columns:1fr}}
+/* ---------- 3) MAKE the outlook minimal + attractive (CHIPS) ---------- */
+/* This assumes your durations (Minor/Moderate/Major/Below) live in .fc48Labels.
+   If it's a single line of text, this still helps by wrapping + shrinking nicely. */
+.fc48Labels{
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+  flex-wrap:wrap !important;
+  gap:8px !important;
+  margin-top:2px !important;
+  margin-bottom:6px !important;
+  font-size:12.5px !important;
+  font-weight:950 !important;
+  color:rgba(234,240,255,.92) !important;
+}
 
-  .card{
-    background:var(--card);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    box-shadow:var(--shadow);
-    padding:14px;
-    overflow:hidden;
-    position:relative;
-  }
-  .card:before{
-    content:"";
-    position:absolute;
-    inset:-1px;
-    pointer-events:none;
-    opacity:.9;
-    background:
-      radial-gradient(650px 280px at 16% 0%, rgba(45,212,191,.12), transparent 55%),
-      radial-gradient(520px 320px at 90% 18%, rgba(251,113,133,.10), transparent 60%);
-  }
-  .card>*{position:relative}
+/* If your labels are split into children (div/span), they become pills */
+.fc48Labels > *{
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:8px !important;
+  padding:8px 10px !important;
+  border-radius:999px !important;
+  border:1px solid var(--line) !important;
+  background:rgba(255,255,255,.05) !important;
+  box-shadow: 0 10px 26px rgba(0,0,0,.28) !important;
+  white-space:nowrap !important;
+}
 
-  .hrow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
-  .hrow h2{margin:0;font-size:12.5px;letter-spacing:.22px;text-transform:uppercase;color:var(--muted);font-weight:950}
+/* Color hints (only apply if you used classes on the children) */
+.fc48Labels .minor{ color:var(--minor) !important; }
+.fc48Labels .moderate{ color:var(--moderate) !important; }
+.fc48Labels .major{ color:var(--major) !important; }
+.fc48Labels .below{ color:rgba(234,240,255,.85) !important; }
 
-  /* =========================================================
-     ✅ LIVE CONDITIONS TOP PANES (SPATIAL + INFO OPTIMIZED)
-     ========================================================= */
+/* If your durations are just ONE text node (no children),
+   at least keep it readable + centered and not huge */
+.fc48Labels{
+  text-align:center !important;
+  line-height:1.25 !important;
+}
 
-  /* Put the live panes into a real dashboard grid */
-  .liveGrid{
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap:10px;
-    align-items:stretch;
-  }
+/* Make the small meta line tighter */
+.fc48Meta{
+  text-align:center !important;
+  color:var(--muted) !important;
+  font-size:12px !important;
+  line-height:1.25 !important;
+  margin-top:2px !important;
+}
 
-  /* Current tile (hero) */
-  .heroMetric{
-    background:var(--card2);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:14px;
-    min-height:118px;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-  }
-  .heroMetric .ml{
-    text-align:left;
-    margin:0 0 10px 0;
-  }
-  .heroMetric .mv{
-    justify-content:flex-start;
-    font-size:46px;
-    gap:10px;
-  }
-  .heroMetric .unit{ font-size:13px; }
-  .heroMetric .ms{ text-align:left; }
+/* ---------- 4) COMPACT "Forecasted flood windows" text ---------- */
+/* Your screenshot shows:
+   Minor
+   Feb 02, 2026, 08:45 AM → Feb 02, 2026, 10:30 AM
+   1.8h
+   We can't rewrite text purely with CSS, but we can:
+   - shrink it
+   - tighten spacing
+   - keep the date range on one line (ellipsis if needed)
+   - hide the trailing duration line IF it's in its own element (common) */
 
-  /* Forecast tile: occupies the right column, but can stretch */
-  .forecastPane{
-    background:var(--card2);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:14px;
-    min-height:118px;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
+/* The whole block (use whichever ID/class you already have) */
+#fcWindows, #forecastWindows, .fcWindows, .forecastWindows{
+  margin-top:8px !important;
+  padding-top:6px !important;
+  border-top:1px solid rgba(255,255,255,.07) !important;
+}
 
-  /* The bar itself (your JS can set widths on segments) */
-  .fc48Wrap{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
-  .fc48Title{
-    color:var(--muted);
-    font-weight:950;
-    font-size:11.5px;
-    text-transform:uppercase;
-    letter-spacing:.2px;
-  }
-  .fc48Bar{
-    position:relative;
-    height:18px;
-    border-radius:999px;
-    background:rgba(255,255,255,.06);
-    border:1px solid var(--line);
-    overflow:hidden;
-  }
-  .fc48Bar .seg{
-    position:absolute;
-    top:0; bottom:0;
-  }
-  .seg.minor{ background:rgba(251,191,36,.95); }
-  .seg.moderate{ background:rgba(251,113,133,.90); }
-  .seg.major{ background:rgba(167,139,250,.90); }
-  .seg.below{ background:rgba(255,255,255,.08); }
+/* Title line */
+#fcWindows h3,
+#forecastWindows h3,
+.fcWindows h3,
+.forecastWindows h3{
+  margin:0 0 6px 0 !important;
+  font-size:12px !important;
+  letter-spacing:.16px !important;
+  text-transform:uppercase !important;
+  color:var(--muted) !important;
+  font-weight:950 !important;
+  text-align:left !important;
+}
 
-  .fc48Labels{
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
-    flex-wrap:wrap;
-    font-size:12px;
-    font-weight:950;
-    color:rgba(234,240,255,.92);
-  }
-  .fc48Labels b{ font-weight:950; }
-  .fc48Meta{
-    color:var(--muted);
-    font-size:12.5px;
-    line-height:1.25;
-  }
+/* Make lines smaller + tighter */
+#fcWindows, #forecastWindows, .fcWindows, .forecastWindows{
+  font-size:13px !important;
+  line-height:1.25 !important;
+}
 
-  /* Bottom row inside Live: Today Range + Thresholds */
-  .liveBottom{
-    grid-column: 1 / -1;
-    display:grid;
-    grid-template-columns: 1.1fr .9fr;
-    gap:10px;
-    align-items:start;
-    margin-top:10px;
-  }
+/* If the date range is in a dedicated element, force it to a single optimized line */
+#fcWindows .range,
+#forecastWindows .range,
+.fcWindows .range,
+.forecastWindows .range,
+#fcWindows .windowLine,
+#forecastWindows .windowLine,
+.fcWindows .windowLine,
+.forecastWindows .windowLine{
+  display:block !important;
+  font-weight:950 !important;
+  font-size:13px !important;
+  white-space:nowrap !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
 
-  /* Make your existing rangeBox fit perfectly */
-  .rangeBox{
-    margin-top:0;
-    background:var(--card2);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:12px;
-    text-align:left;
-  }
-  .rangeTitle{
-    color:var(--muted);
-    font-weight:950;
-    font-size:11.5px;
-    text-transform:uppercase;
-    letter-spacing:.2px
-  }
-  .rangeRow{
-    display:flex;
-    justify-content:flex-start;
-    gap:22px;
-    flex-wrap:wrap;
-    margin-top:10px
-  }
-  .rangeCol{min-width:160px}
-  .rangeLab{color:var(--muted);font-weight:950;font-size:11px;letter-spacing:.18px;text-transform:uppercase}
-  .rangeVal{font-weight:950;font-size:34px;line-height:1;margin-top:6px}
-  .rangeMeta{color:var(--muted);font-size:12.5px;margin-top:10px}
+/* If duration ("1.8h") is in its own element, hide it for minimal text */
+#fcWindows .dur,
+#forecastWindows .dur,
+.fcWindows .dur,
+.forecastWindows .dur,
+#fcWindows .hours,
+#forecastWindows .hours,
+.fcWindows .hours,
+.forecastWindows .hours{
+  display:none !important;
+}
 
-  /* Threshold tile (minor/mod/major) — tighter + readable */
-  .threshPane{
-    background:var(--card2);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:12px;
-  }
-  .threshTitle{
-    color:var(--muted);
-    font-weight:950;
-    font-size:11.5px;
-    text-transform:uppercase;
-    letter-spacing:.2px;
-    margin-bottom:10px;
-  }
-  .threshRow{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
-  .threshItem{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    padding:10px 10px;
-    border-radius:12px;
-    border:1px solid var(--line);
-    background:rgba(255,255,255,.04);
-  }
-  .threshItem .left{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    min-width:0;
-  }
-  .chip{width:9px;height:9px;border-radius:99px;display:inline-block}
-  .chip.minor{background:var(--minor)}
-  .chip.moderate{background:var(--moderate)}
-  .chip.major{background:var(--major)}
-  .threshName{
-    font-weight:950;
-    letter-spacing:.2px;
-    white-space:nowrap;
-  }
-  .threshVal{
-    color:rgba(234,240,255,.92);
-    font-weight:950;
-    white-space:nowrap;
-  }
+/* Make the category label (Minor/Moderate/Major) look like a subtle chip */
+#fcWindows .level,
+#forecastWindows .level,
+.fcWindows .level,
+.forecastWindows .level{
+  display:inline-flex !important;
+  align-items:center !important;
+  padding:6px 10px !important;
+  border-radius:999px !important;
+  border:1px solid var(--line) !important;
+  background:rgba(255,255,255,.05) !important;
+  font-weight:950 !important;
+  margin-bottom:6px !important;
+}
 
-  /* Mobile stacking: current, forecast, then bottom row stacks */
-  @media(max-width:920px){
-    .liveGrid{ grid-template-columns: 1fr; }
-    .liveBottom{ grid-template-columns: 1fr; }
-    .heroMetric .mv{ font-size:42px; }
-  }
+/* ---------- 5) ENSURE Minor/Moderate/Major NEVER fall off screen ---------- */
+/* Your thresholds row is .stages in prior code; stop horizontal cut-off on desktop */
+.stages{
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  overflow-x: hidden !important;
+}
 
-  /* =========================================================
-     EXISTING SECTIONS BELOW (UNCHANGED LOOK)
-     ========================================================= */
-
-  /* metrics (kept for other cards that still use it) */
-  .metrics{
-    display:grid;
-    grid-template-columns:repeat(2, minmax(0, 520px));
-    justify-content:center;
-    gap:10px;
-    margin-top:8px;
-  }
-  @media(max-width:720px){
-    .metrics{grid-template-columns:1fr}
-  }
-  .metric{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:88px}
-  .ml{color:var(--muted);font-weight:950;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px;margin-bottom:8px;text-align:center}
-  .mv{display:flex;align-items:baseline;justify-content:center;gap:8px;font-weight:950;font-size:28px;letter-spacing:.2px;text-align:center}
-  .unit{color:var(--muted);font-size:12px;font-weight:950}
-  .ms{margin-top:6px;color:var(--muted);font-size:12.5px;line-height:1.25;text-align:center}
-
+/* If the container is too tight on small screens, stack them cleanly */
+@media (max-width: 980px){
   .stages{
-    display:grid;
-    grid-template-columns:repeat(3, minmax(220px,1fr));
-    gap:10px;
-    overflow-x:auto;
-    padding-bottom:2px;
-    -webkit-overflow-scrolling:touch;
-    margin-top:10px
+    grid-template-columns: 1fr !important;
+    overflow-x: visible !important;
   }
-  @media(max-width:760px){.stages{grid-template-columns:1fr;overflow-x:visible}}
-  .stage{
-    background:var(--card2);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:14px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    min-width:220px;
-    overflow:hidden;
-  }
-  .stageName{font-weight:950;font-size:20px;letter-spacing:.2px;white-space:nowrap;flex:1 1 auto;min-width:0}
-  .badge{font-weight:950;font-size:13px;padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);white-space:nowrap;flex:0 0 auto}
+}
 
-  .table{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card2)}
-  table{width:100%;border-collapse:collapse}
-  th,td{padding:10px 10px;border-bottom:1px solid var(--line);font-size:13px}
-  th{text-align:left;color:var(--muted);text-transform:uppercase;letter-spacing:.2px;font-size:11px;font-weight:950}
-  tr:last-child td{border-bottom:none}
+/* Keep stage name + badge from forcing overflow */
+.stage{
+  min-width: 0 !important;
+}
+.stageName{
+  min-width:0 !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
+.badge{
+  max-width: 55% !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
 
-  .tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-weight:950;font-size:12px;white-space:nowrap}
+/* ---------- 6) CENTER Daily Range content INSIDE its card ---------- */
+/* Your daily range card is .rangeBox from prior code */
+.rangeBox{
+  text-align:center !important;
+}
+.rangeTitle{
+  text-align:center !important;
+}
+.rangeRow{
+  justify-content:center !important;
+}
+.rangeCol{
+  min-width: 180px !important;
+  text-align:center !important;
+}
+.rangeLab{
+  text-align:center !important;
+}
+.rangeVal{
+  text-align:center !important;
+}
+.rangeMeta{
+  text-align:center !important;
+}
 
-  .chartWrapTall{height:320px;width:100%}
-  .chartWrap{height:240px;width:100%}
-  .foot{margin-top:10px;color:var(--muted);font-size:12.5px;line-height:1.25;text-align:center}
-
-  .filterRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-  .input,.btn,select{
-    background:rgba(0,0,0,.18);
-    border:1px solid var(--line);
-    color:var(--text);
-    border-radius:12px;
-    padding:10px 10px;
-    font-weight:950;
-    font-size:13px;
-    outline:none
-  }
-  .input{min-width:240px}
-  .btn{cursor:pointer}
-  .btn:hover{filter:brightness(1.06)}
-  .hint{color:var(--muted);font-size:12.5px;line-height:1.25}
+/* ---------- 7) Forecast pane spacing: less empty space, more balance ---------- */
+.forecastPane{
+  width: min(1000px, 100%);
+  margin: 0 auto;
+  text-align:center;
+  gap:8px;
+  padding:14px 14px;
+}
+.fc48Wrap{
+  gap:8px;
+}
 </style>
 
 
