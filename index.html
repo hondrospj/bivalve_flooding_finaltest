@@ -799,6 +799,13 @@ const minorBadge = $("minorBadge"),
       majorBadge = $("majorBadge");
 
 const datumBtn = $("datumBtn");
+      // Flood outlook (next 48h) DOM
+const f48MinorHrsEl = $("f48MinorHrs");
+const f48ModerHrsEl = $("f48ModerHrs");
+const f48MajorHrsEl = $("f48MajorHrs");
+const f48ListEl     = $("f48List");
+const f48MetaEl     = $("f48Meta");
+
 
 
 const monthAvgMeta=$("monthAvgMeta"), monthAvgBody=$("monthAvgBody");
@@ -818,6 +825,14 @@ const fmtFull = new Intl.DateTimeFormat("en-US",{ timeZone:TZ,year:"numeric",mon
 const fmtDay = new Intl.DateTimeFormat("en-US",{timeZone:TZ,month:"short",day:"2-digit"});
 const fmtPartsYMD = new Intl.DateTimeFormat("en-US",{timeZone:TZ,year:"numeric",month:"2-digit",day:"2-digit"});
 const fmtMonthName = new Intl.DateTimeFormat("en-US",{timeZone:TZ,month:"short"});
+
+      const fmtTime = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ,
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true
+});
+function fmtESTTime(iso){ return fmtTime.format(new Date(iso)); }
 
 function fmtESTFull(iso){ return fmtFull.format(new Date(iso)); }
 function fmtESTDay(iso){ return fmtDay.format(new Date(iso)); }
@@ -903,6 +918,157 @@ function setTXTStatus(msg){ if(txtNote) txtNote.textContent = msg || ""; }
   const T = THRESH[DISPLAY_DATUM];
   return { minor:T.minorLow, moderate:T.moderateLow, major:T.majorLow };
 }
+
+      function stageNameFromDisplayFt(ft){
+  const T = THRESH[DISPLAY_DATUM];
+  if(ft >= T.majorLow) return "Major";
+  if(ft >= T.moderateLow) return "Moderate";
+  if(ft >= T.minorLow) return "Minor";
+  return "Below";
+}
+
+function stageColorVar(stage){
+  if(stage==="Major") return "var(--major)";
+  if(stage==="Moderate") return "var(--moderate)";
+  if(stage==="Minor") return "var(--minor)";
+  return "var(--muted)";
+}
+
+// Build segments of consecutive points where stage >= Minor
+function buildFloodSegments(points){
+  const segs = [];
+  let cur = null;
+
+  for(const p of points){
+    const stage = stageNameFromDisplayFt(p.ftDisplay);
+
+    if(stage === "Below"){
+      if(cur){ segs.push(cur); cur = null; }
+      continue;
+    }
+
+    if(!cur){
+      cur = { startT:p.t, endT:p.t, peakFt:p.ftDisplay, peakStage:stage, startMs:p.ms, endMs:p.ms };
+    }else{
+      cur.endT = p.t;
+      cur.endMs = p.ms;
+      if(p.ftDisplay > cur.peakFt){
+        cur.peakFt = p.ftDisplay;
+        cur.peakStage = stage;
+      }
+    }
+  }
+  if(cur) segs.push(cur);
+  return segs;
+}
+
+function updateFloodOutlook48(){
+  if(!f48MinorHrsEl || !f48ModerHrsEl || !f48MajorHrsEl || !f48ListEl || !f48MetaEl) return;
+
+  const pred = STATE.pred72Mllw || [];
+  if(!pred.length){
+    f48MinorHrsEl.textContent = "—";
+    f48ModerHrsEl.textContent = "—";
+    f48MajorHrsEl.textContent = "—";
+    f48ListEl.innerHTML = `
+      <div class="event">
+        <div class="eventLeft">
+          <div class="eventWhen">NOAA/PETSS unavailable</div>
+          <div class="eventSub">No forecast points loaded</div>
+        </div>
+        <div class="eventBadge" style="color:var(--muted)">—</div>
+      </div>`;
+    f48MetaEl.textContent = "";
+    return;
+  }
+
+  // Next 48h window anchored to forecast start
+  const t0 = new Date(pred[0].t).getTime();
+  const t1 = t0 + 48 * 3600 * 1000;
+
+  // Convert to DISPLAY datum and keep only 48h
+  const pts = pred
+    .map(p=>{
+      const ms = new Date(p.t).getTime();
+      const mllw = Number(p.ft);
+      if(!Number.isFinite(ms) || !Number.isFinite(mllw)) return null;
+      if(ms < t0 || ms > t1) return null;
+      const ftDisplay = toDisplayFtFromMllw(mllw);
+      return { t: p.t, ms, ftDisplay };
+    })
+    .filter(Boolean)
+    .sort((a,b)=>a.ms-b.ms);
+
+  if(!pts.length){
+    f48MinorHrsEl.textContent = "0.0";
+    f48ModerHrsEl.textContent = "0.0";
+    f48MajorHrsEl.textContent = "0.0";
+    f48ListEl.innerHTML = `
+      <div class="event">
+        <div class="eventLeft">
+          <div class="eventWhen">No flood periods forecast</div>
+          <div class="eventSub">Next 48h stays below minor</div>
+        </div>
+        <div class="eventBadge" style="color:var(--ok)">Below</div>
+      </div>`;
+    f48MetaEl.textContent = `${fmtNiceDate(pred[0].t)} → ${fmtNiceDate(new Date(t1).toISOString())}`;
+    return;
+  }
+
+  // Count duration in each stage using dt between points
+  let minorMs=0, moderMs=0, majorMs=0;
+
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i];
+    const b = pts[i+1] || null;
+    const dt = b ? Math.max(0, b.ms - a.ms) : 15*60*1000; // assume 15m for last step
+    const stage = stageNameFromDisplayFt(a.ftDisplay);
+
+    if(stage==="Major") majorMs += dt;
+    else if(stage==="Moderate") moderMs += dt;
+    else if(stage==="Minor") minorMs += dt;
+  }
+
+  const msToHours = ms => (ms / 3600000);
+  f48MinorHrsEl.textContent = msToHours(minorMs).toFixed(1);
+  f48ModerHrsEl.textContent = msToHours(moderMs).toFixed(1);
+  f48MajorHrsEl.textContent = msToHours(majorMs).toFixed(1);
+
+  // Build flood segments list
+  const segs = buildFloodSegments(pts);
+
+  if(!segs.length){
+    f48ListEl.innerHTML = `
+      <div class="event">
+        <div class="eventLeft">
+          <div class="eventWhen">No flood periods forecast</div>
+          <div class="eventSub">Next 48h stays below minor</div>
+        </div>
+        <div class="eventBadge" style="color:var(--ok)">Below</div>
+      </div>`;
+  }else{
+    const show = segs.slice(0,4);
+    f48ListEl.innerHTML = show.map(seg=>{
+      const durH = Math.max(0.25, (seg.endMs - seg.startMs) / 3600000);
+      const when = `${fmtNiceDate(seg.startT)} · ${fmtESTTime(seg.startT)} → ${fmtESTTime(seg.endT)}`;
+      const sub  = `${durH.toFixed(1)}h · Peak ${seg.peakFt.toFixed(2)} ${unitText()}`;
+      const badgeColor = stageColorVar(seg.peakStage);
+
+      return `
+        <div class="event">
+          <div class="eventLeft">
+            <div class="eventWhen">${when}</div>
+            <div class="eventSub">${sub}</div>
+          </div>
+          <div class="eventBadge" style="color:${badgeColor}">${seg.peakStage}</div>
+        </div>`;
+    }).join("");
+  }
+
+  f48MetaEl.textContent =
+    `${fmtNiceDate(pred[0].t)} → ${fmtNiceDate(new Date(t1).toISOString())} · Based on NOAA/PETSS`;
+}
+
 function updatePred24RangeCard(){
   const maxEl = document.getElementById("pred24MaxFt");
   const minEl = document.getElementById("pred24MinFt");
@@ -2862,7 +3028,9 @@ async function updateTimeseries(){
   // ✅ IMPORTANT: actually render the chart + 24h range card after STATE updates
   updateTsChartFromState();
   updatePred24RangeCard();
+  updateFloodOutlook48();
 }
+
 
 
 /* =========================
@@ -3173,7 +3341,9 @@ const oldDatum = DISPLAY_DATUM;
 
   updatePred24RangeCard();
   updateTsChartFromState();
+  updateFloodOutlook48();
 });
+
 
 
 
