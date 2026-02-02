@@ -11,386 +11,143 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-  /* =========================
-   BIVALVE / FLOOD DASHBOARD — SPATIAL + RESPONSIVE OPTIMIZED
-   Drop-in replacement for your entire <style> section.
-   (Keeps your dark/glass vibe, fixes overflow, improves density & hierarchy.)
-========================= */
+<style>
+/* =========================================================
+BIVALVE DASHBOARD — BEAUTIFUL GLASS UI (DROP-IN)
+- Works even if Live Conditions content is mostly plain text
+- Still supports .metrics/.metric if present
+- Fixes massive empty space + improves hierarchy
+========================================================= */
 
+/* ---------- Theme ---------- */
 :root{
-  --bg:#0b1220;
-  --text:#eaf0ff;
+  --bg0:#070b14;
+  --bg1:#0b1220;
+  --text:#ecf2ff;
   --muted:#a9b6d3;
-  --line:rgba(255,255,255,.085);
+  --soft:rgba(255,255,255,.08);
+  --line:rgba(255,255,255,.10);
 
   --ok:#2dd4bf;
   --minor:#fbbf24;
   --moderate:#fb7185;
   --major:#a78bfa;
 
-  --shadow:0 22px 70px rgba(0,0,0,.40);
   --radius:18px;
+  --radius2:22px;
+  --shadow: 0 24px 80px rgba(0,0,0,.55);
+  --shadow2: 0 14px 50px rgba(0,0,0,.40);
 
-  --card:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
-  --card2:rgba(0,0,0,.22);
+  --glass: rgba(255,255,255,.055);
+  --glass2: rgba(255,255,255,.035);
 
   --maxw: 1180px;
 
-  /* spacing scale (denser than before) */
-  --s1: 8px;
-  --s2: 12px;
-  --s3: 14px;
-  --s4: 18px;
-  --s5: 22px;
-
-  --title: 12px;
+  --pad: 18px;
+  --gap: 14px;
 }
 
-/* ---------- Base ---------- */
+/* ---------- Base reset ---------- */
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
 body{
   margin:0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
   color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
   background:
-    radial-gradient(1000px 700px at 10% -10%, rgba(125,211,252,.12), transparent 55%),
-    radial-gradient(900px 650px at 90% 0%, rgba(167,139,250,.10), transparent 58%),
-    radial-gradient(900px 650px at 50% 120%, rgba(45,212,191,.10), transparent 60%),
-    var(--bg);
+    radial-gradient(1000px 720px at 12% -15%, rgba(125,211,252,.15), transparent 58%),
+    radial-gradient(900px 680px at 90% 0%, rgba(167,139,250,.13), transparent 62%),
+    radial-gradient(900px 700px at 45% 115%, rgba(45,212,191,.10), transparent 62%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
 }
 
-/* Common “don’t overflow” helpers (IMPORTANT for grid/flex children) */
-.min0{ min-width:0; }
-.nowrap{ white-space:nowrap; }
-.wrap{ white-space:normal; }
-.muted{ color:var(--muted); }
-.line{ height:1px; background:var(--line); }
+a{ color:inherit; text-decoration:none; }
+a:hover{ text-decoration:underline; text-decoration-color: rgba(255,255,255,.25); }
 
-/* ---------- Layout ---------- */
-.container{
+/* prevent grid/flex overflow */
+.wrap, .top, .card, .metrics, .metric, .table, .chartWrap, .chartWrapTall{ min-width:0; }
+
+/* ---------- Wrapper ---------- */
+.wrap{
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 20px 18px 26px;
+  padding: 18px 18px 28px;
 }
 
-/* Sections spacing tighter */
-.section{
-  margin-top: 14px;
-}
-
-/* Head row (top header) */
-.topbar{
+/* ---------- Top bar ---------- */
+.top{
   display:flex;
-  align-items:flex-end;
+  align-items:center;
   justify-content:space-between;
-  gap: var(--s3);
+  gap: 12px;
   flex-wrap:wrap;
-  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius2);
+  border: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025));
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
-.topbar h1, .topbar h2, .topbar h3{
-  margin:0;
-  font-weight: 800;
-  letter-spacing: .02em;
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  min-width:0;
 }
+.brand img{
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.08);
+  padding: 6px;
+}
+.brandTitle{ min-width:0; }
 .kicker{
   font-size: 12px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: rgba(234,240,255,.75);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color: rgba(236,242,255,.70);
+  line-height:1.2;
 }
-.rightNote{
-  font-size: 12px;
-  color: rgba(234,240,255,.60);
-}
-
-/* ---------- Card system ---------- */
-.card, .panel{
-  background: var(--card);
-  border: 1px solid rgba(255,255,255,.07);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  position: relative;
-  overflow: hidden;
-}
-.card::before, .panel::before{
-  content:"";
-  position:absolute; inset:0;
-  background: radial-gradient(700px 300px at 10% 10%, rgba(255,255,255,.08), transparent 60%);
-  pointer-events:none;
-}
-.cardInner, .panelInner{
-  position:relative;
-  padding: 16px 18px; /* tighter */
+.name{
+  margin-top: 3px;
+  font-size: clamp(18px, 2.2vw, 26px);
+  font-weight: 950;
+  letter-spacing:-.02em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
 }
 
-/* Titles and value typography */
-.cardTitle{
-  font-size: var(--title);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: rgba(234,240,255,.78);
-  margin: 0 0 10px 0;
-}
-.bigValue{
-  font-size: clamp(34px, 4.2vw, 56px);
-  line-height: 1.05;
-  margin: 0;
-  letter-spacing: -0.02em;
-  font-weight: 850;
-}
-.valueUnit{
-  font-size: 14px;
-  color: rgba(234,240,255,.72);
-  font-weight: 650;
-  margin-left: 6px;
-}
-.subline{
-  margin-top: 10px;
-  font-size: 13px;
-  color: rgba(234,240,255,.70);
-}
-
-/* ---------- Grids (core spatial optimization) ---------- */
-.grid{
-  display:grid;
-  gap: 14px;
-}
-.grid > *{ min-width:0; } /* prevent overflow */
-
-/* Top “Current Water Elevation” + (whatever else you have up there) */
-.gridTop{
-  grid-template-columns: 1fr;
-}
-@media (min-width: 860px){
-  .gridTop{ grid-template-columns: 1.1fr 0.9fr; }
-}
-
-/* Big middle forecast panel typically full width */
-.gridMid{
-  grid-template-columns: 1fr;
-}
-
-/* Bottom area: Daily Range + Minor/Moderate/Major thresholds (fixes Major clipping) */
-.bottomGrid{
-  display:grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr; /* daily range + 3 threshold cards */
-  gap: 14px;
-  align-items: stretch;
-}
-.bottomGrid > *{ min-width:0; }
-
-@media (max-width: 1100px){
-  .bottomGrid{ grid-template-columns: 1fr 1fr; }
-  .bottomGrid .dailyRangeCard{ grid-column: 1 / -1; }
-}
-@media (max-width: 620px){
-  .bottomGrid{ grid-template-columns: 1fr; }
-}
-
-/* If your thresholds are in their own row elsewhere */
-.thresholdGrid{
-  display:grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
-  gap: 14px;
-}
-.thresholdGrid > *{ min-width:0; }
-
-@media (max-width: 980px){
-  .thresholdGrid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
-}
-@media (max-width: 620px){
-  .thresholdGrid{ grid-template-columns: 1fr; }
-}
-
-/* ---------- Pills / badges ---------- */
 .pill{
   display:inline-flex;
   align-items:center;
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(0,0,0,.26);
-  border: 1px solid rgba(255,255,255,.10);
-  font-size: 13px;
-  font-weight: 750;
-  white-space: nowrap;
-}
-.pillDot{
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.35);
-}
-
-/* Variant colors */
-.pill.ok .pillDot{ background: var(--ok); }
-.pill.minor .pillDot{ background: var(--minor); }
-.pill.moderate .pillDot{ background: var(--moderate); }
-.pill.major .pillDot{ background: var(--major); }
-
-/* ---------- Stage / forecast summary row ---------- */
-.stageRow{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 12px;
-  flex-wrap:wrap; /* critical: prevents overflow */
-}
-.stageChips{
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  flex-wrap:wrap; /* critical: prevents overflow */
-}
-.stageMeta{
-  font-size: 12px;
-  color: rgba(234,240,255,.62);
-  white-space: nowrap;
-}
-@media (max-width: 620px){
-  .stageMeta{ white-space: normal; }
-}
-
-/* Progress bar wrapper */
-.stageBarWrap{
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
   background: rgba(0,0,0,.22);
-  border: 1px solid rgba(255,255,255,.08);
-  overflow:hidden;
-}
-.stageBar{
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.06);
-  position: relative;
-  overflow:hidden;
-}
-.stageBar > span{
-  display:block;
-  height:100%;
-  width: 0%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(45,212,191,.95), rgba(251,191,36,.95), rgba(251,113,133,.95), rgba(167,139,250,.95));
-}
-
-/* ---------- Forecasted windows list ---------- */
-.windowList{
-  margin-top: 12px;
-  display:grid;
-  gap: 10px;
-}
-.windowItem{
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap: 12px;
-  padding: 12px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,.20);
-  border: 1px solid rgba(255,255,255,.08);
-}
-.windowLeft{
-  display:flex;
-  gap: 10px;
-  min-width:0;
-}
-.windowDot{
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  margin-top: 3px;
-  background: rgba(255,255,255,.35);
-  flex: 0 0 auto;
-}
-.windowDot.minor{ background: var(--minor); }
-.windowDot.moderate{ background: var(--moderate); }
-.windowDot.major{ background: var(--major); }
-
-.windowText{
-  min-width:0;
-}
-.windowLabel{
-  font-weight: 850;
-  margin: 0 0 2px 0;
-}
-.windowWhen{
-  margin: 0;
   font-size: 13px;
-  color: rgba(234,240,255,.72);
-}
-.windowRight{
-  font-weight: 800;
-  color: rgba(234,240,255,.85);
-  white-space: nowrap;
-}
-
-/* ---------- Threshold cards ---------- */
-.thresholdCard{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 12px;
-}
-.thresholdCard h3{
-  margin:0;
-  font-size: 18px;
-  letter-spacing: -0.01em;
-}
-.thresholdCard .rangePill{
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-weight: 850;
-  font-size: 14px;
-  white-space: nowrap;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(0,0,0,.24);
-}
-.rangePill.minor{ color: var(--minor); }
-.rangePill.moderate{ color: var(--moderate); }
-.rangePill.major{ color: var(--major); }
-
-/* ---------- Daily range card layout ---------- */
-.dailyRange{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  align-items:end;
-}
-.dailyRange .stat{
-  padding: 12px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.08);
-}
-.dailyRange .statLabel{
-  font-size: 12px;
-  letter-spacing: .10em;
-  text-transform: uppercase;
-  color: rgba(234,240,255,.65);
-  margin-bottom: 6px;
-}
-.dailyRange .statValue{
-  font-size: 34px;
-  line-height: 1.05;
   font-weight: 900;
-  letter-spacing: -0.02em;
+  color: rgba(236,242,255,.92);
+  white-space:nowrap;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
-.dailyRange .statUnit{
-  font-size: 13px;
-  color: rgba(234,240,255,.70);
-  margin-left: 6px;
-  font-weight: 750;
-}
-.dailyRange .statMeta{
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(234,240,255,.62);
+.dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.35);
+  box-shadow: 0 0 0 4px rgba(255,255,255,.10);
 }
 
-/* ---------- Small utility buttons (if you have any) ---------- */
+/* ---------- Buttons / inputs ---------- */
 .btn{
   appearance:none;
   border: 1px solid rgba(255,255,255,.12);
@@ -398,21 +155,342 @@ body{
   color: var(--text);
   border-radius: 14px;
   padding: 10px 12px;
-  font-weight: 800;
+  font-weight: 950;
   cursor:pointer;
-  transition: transform .12s ease, border-color .12s ease;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
 }
-.btn:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,.18); }
+.btn:hover{
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,.18);
+  background: rgba(0,0,0,.28);
+}
 .btn:active{ transform: translateY(0px); }
 
-/* ---------- Mobile tightening ---------- */
-@media (max-width: 520px){
-  .container{ padding: 16px 14px 22px; }
-  .cardInner, .panelInner{ padding: 14px 14px; }
-  .bigValue{ font-size: 42px; }
-  .thresholdCard h3{ font-size: 17px; }
-  .pill{ font-size: 12px; padding: 7px 10px; }
+.input, select{
+  appearance:none;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  font-size: 14px;
 }
+.input::placeholder{ color: rgba(236,242,255,.45); }
+.input:focus, select:focus, .btn:focus{
+  outline:none;
+  border-color: rgba(255,255,255,.22);
+  box-shadow: 0 0 0 3px rgba(45,212,191,.14);
+}
+
+/* ---------- Banner ---------- */
+.banner{
+  display:none; /* shown via JS */
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(239,68,68,.14);
+  box-shadow: 0 14px 40px rgba(0,0,0,.35);
+}
+
+/* ---------- Cards ---------- */
+.card{
+  margin-top: 14px;
+  padding: 18px 18px;
+  border-radius: var(--radius2);
+  border: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(180deg, var(--glass), var(--glass2));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  position: relative;
+  overflow:hidden;
+}
+.card::before{
+  content:"";
+  position:absolute; inset:0;
+  background:
+    radial-gradient(720px 320px at 14% 12%, rgba(255,255,255,.09), transparent 60%),
+    radial-gradient(600px 260px at 95% 10%, rgba(167,139,250,.10), transparent 55%);
+  pointer-events:none;
+}
+.card > *{ position:relative; }
+
+/* ---------- Headings ---------- */
+h2{
+  margin:0 0 12px 0;
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing:-.02em;
+}
+.hrow{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap: 12px;
+  flex-wrap:wrap;
+  margin-bottom: 10px;
+}
+.hint{ color: rgba(236,242,255,.70); font-size: 13px; }
+.small{ color: rgba(236,242,255,.72); font-size: 12px; }
+
+/* =========================================================
+LIVE CONDITIONS — make plain text look premium
+========================================================= */
+
+/* Give the first card ("Live conditions") a strong layout even if content is plain text */
+.card p, .card div, .card span, .card li{
+  line-height: 1.45;
+}
+
+/* Turn common "label then value" lines into clean blocks */
+.card .ml{
+  font-size: 12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color: rgba(236,242,255,.70);
+  margin: 4px 0 6px;
+}
+
+/* Big current value if you have #curFt */
+#curFt{
+  font-size: clamp(38px, 5vw, 56px);
+  font-weight: 1000;
+  letter-spacing:-.03em;
+  line-height:1.0;
+  display:inline-block;
+  margin-right: 8px;
+}
+
+/* If you have unit text nearby */
+.unit{
+  font-size: 13px;
+  font-weight: 900;
+  color: rgba(236,242,255,.72);
+  white-space: nowrap;
+}
+
+/* Turn raw text blocks in Live Conditions into “chips” for readability */
+.card .kv,
+.card .line,
+.card .ms{
+  color: rgba(236,242,255,.78);
+  font-size: 13px;
+}
+
+/* Pretty divider line */
+.hr{
+  height:1px;
+  background: rgba(255,255,255,.08);
+  margin: 12px 0;
+  border:0;
+}
+
+/* Forecast “note” line */
+#fcNote, .foot, .ms{
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(236,242,255,.62);
+}
+
+/* =========================================================
+IF YOU DO HAVE .metrics/.metric wrappers, make them gorgeous
+========================================================= */
+.metrics{
+  display:grid;
+  grid-template-columns: repeat(12, minmax(0,1fr));
+  gap: var(--gap);
+  align-items: stretch;
+}
+
+/* soft metric cards */
+.metric{
+  grid-column: span 4;
+  padding: 14px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: rgba(0,0,0,.20);
+  box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  overflow:hidden;
+}
+.metric[style*="grid-column:1 / -1"],
+.metric[style*="grid-column: 1 / -1"]{
+  grid-column: 1 / -1;
+}
+
+/* responsive metrics */
+@media (max-width: 980px){ .metric{ grid-column: span 6; } }
+@media (max-width: 620px){
+  .metrics{ grid-template-columns: 1fr; }
+  .metric{ grid-column: 1 / -1; }
+}
+
+/* nice “label + value” inside metric boxes */
+.mv{
+  display:flex;
+  align-items:baseline;
+  gap: 8px;
+}
+.mv > span[id$="Ft"], .mv > span[id*="Ft"]{
+  font-size: clamp(30px, 4.2vw, 50px);
+  font-weight: 1000;
+  letter-spacing:-.03em;
+  line-height:1.0;
+}
+
+/* =========================================================
+PETSS 48H BAR (if present)
+========================================================= */
+.fc48Bar{
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.10);
+}
+.fc48Bar .seg{ position:absolute; top:0; bottom:0; width:0%; }
+.fc48Bar .seg.below{ left:0; width:100%; background: rgba(255,255,255,.06); }
+.fc48Bar .seg.minor{ background: rgba(251,191,36,.92); }
+.fc48Bar .seg.moderate{ background: rgba(251,113,133,.88); }
+.fc48Bar .seg.major{ background: rgba(167,139,250,.88); }
+
+.fc48BarLabels{
+  position:absolute; inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 950;
+  color: rgba(236,242,255,.92);
+  text-shadow: 0 1px 12px rgba(0,0,0,.55);
+  white-space: nowrap;
+  pointer-events:none;
+}
+@media (max-width: 520px){ .fc48BarLabels{ display:none; } }
+
+/* =========================================================
+Stages (Minor / Moderate / Major)
+========================================================= */
+.stages{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: var(--gap);
+}
+.stage{
+  padding: 14px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: rgba(0,0,0,.20);
+}
+.stageName{
+  font-size: 12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color: rgba(236,242,255,.70);
+  margin-bottom: 10px;
+}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.22);
+  border: 1px solid rgba(255,255,255,.12);
+  font-weight: 1000;
+  font-size: 14px;
+}
+@media (max-width: 620px){
+  .stages{ grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+Charts
+========================================================= */
+.chartWrap, .chartWrapTall{
+  width: 100%;
+  border-radius: 18px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.10);
+  overflow:hidden;
+  padding: 10px 10px;
+}
+.chartWrap{ height: 320px; }
+.chartWrapTall{ height: 420px; }
+@media (max-width: 620px){
+  .chartWrap{ height: 300px; }
+  .chartWrapTall{ height: 380px; }
+}
+
+/* =========================================================
+Tables — make them look modern + readable
+========================================================= */
+.table{
+  width:100%;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.16);
+}
+table{
+  width:100%;
+  border-collapse: collapse;
+  min-width: 620px; /* avoids ugly wrap; allows horizontal scroll */
+}
+thead th{
+  text-align:left;
+  font-size: 12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color: rgba(236,242,255,.72);
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.20);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+tbody td{
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  color: rgba(236,242,255,.88);
+  font-size: 14px;
+}
+tbody tr:hover td{ background: rgba(255,255,255,.03); }
+
+/* =========================================================
+Mobile tightening
+========================================================= */
+@media (max-width: 520px){
+  .wrap{ padding: 14px 14px 22px; }
+  .top{ padding: 10px 10px; }
+  .card{ padding: 14px 14px; }
+  .brand img{ width: 40px; height: 40px; }
+  .pill{ font-size: 12px; padding: 7px 10px; }
+  h2{ font-size: 19px; }
+}
+
+/* ---------------------------------------------------------
+Optional: Make "Live conditions" card content not look like
+a wall of text even if you didn't wrap anything.
+If your live text is inside a single container (like #liveText),
+you can add class "prose" to it and it will auto-format.
+--------------------------------------------------------- */
+.prose{
+  display:grid;
+  gap: 10px;
+}
+.prose .block{
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(0,0,0,.18);
+}
+</style>
 
 </style>
 </head>
