@@ -8,7 +8,7 @@
     "moderateLow": 5.19,
     "majorLow": 6.19
   },
-  "lastProcessedISO": "2026-02-01T23:36:00.000Z",
+  "lastProcessedISO": "2026-02-02T05:00:00.000Z",
   "events": [
     {
       "t": "2000-03-08T16:00:00.000Z",
@@ -104868,6 +104868,13 @@
       "ft": 3.77,
       "type": "Below",
       "crest": "2026-02-01T13:34:00.000Z",
+      "kind": "CrestHigh"
+    },
+    {
+      "t": "2026-02-02T02:12:00.000Z",
+      "ft": 2.91,
+      "type": "Below",
+      "crest": "2026-02-02T02:01:00.000Z",
       "kind": "CrestHigh"
     }
   ],
