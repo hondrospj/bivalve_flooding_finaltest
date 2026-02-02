@@ -1,6 +1,7 @@
 
 
 
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -10,275 +11,239 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<style>
-/* =========================================================
-   PJ — LIVE CONDITIONS POLISH PATCH (STYLE ONLY)
-   Goals:
-   (1) "Forecasted flood windows" compact + smaller
-   (2) Minor/Moderate/Major never fall off screen
-   (3) Rename title to "48 hour flood outlook"
-   (4) Remove the bar + make outlook visually appealing (chips)
-   (5) Center Current Water Elevation tile
-   (6) Center Daily Range Max/Min inside its card
-   ========================================================= */
+  <style>
+    :root{
+      --bg:#0b1220;
+      --text:#eaf0ff;
+      --muted:#a9b6d3;
+      --line:rgba(255,255,255,.085);
+      --ok:#2dd4bf;
+      --minor:#fbbf24;
+      --moderate:#fb7185;
+      --major:#a78bfa;
+      --shadow:0 22px 70px rgba(0,0,0,.40);
+      --radius:18px;
+      --card:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+      --card2:rgba(0,0,0,.18);
+    }
+    
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+      background:
+        radial-gradient(1200px 650px at 15% -10%, rgba(34,211,238,.18), transparent 55%),
+        radial-gradient(1000px 600px at 92% 12%, rgba(167,139,250,.16), transparent 55%),
+        var(--bg);
+      color:var(--text);
+    }
+    .wrap{max-width:1200px;margin:0 auto;padding:16px 16px 28px}
+    a{color:inherit;text-decoration:none}
 
-/* ---------- 1) CENTER the CURRENT WATER ELEVATION tile ---------- */
-/* If you're using the liveGrid/heroMetric layout from earlier */
-.liveGrid{
-  grid-template-columns: 1fr;              /* stack so hero can be centered */
-  justify-items: center;
-}
-.heroMetric{
-  width: min(760px, 100%);
-  margin: 0 auto;
-  text-align: center;
-  align-items: center;
-  padding: 16px 16px;
-}
-.heroMetric .ml{ text-align:center; margin-bottom:10px; }
-.heroMetric .mv{ justify-content:center; }
-.heroMetric .ms{ text-align:center; }
+    .banner{
+      display:none;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(251,113,133,.12);
+      border-radius:14px;
+      padding:12px 12px;
+      margin-bottom:12px;
+      box-shadow:var(--shadow);
+    }
+    .banner b{font-weight:950}
+    .banner .small{color:var(--muted);font-size:12.5px;margin-top:4px;line-height:1.25}
 
-/* If you still have the hero tile as a normal .metric in .metrics */
-.metrics{
-  justify-items:center;
-}
-.metrics .metric:first-child{
-  width:min(760px, 100%);
-  margin:0 auto;
-  text-align:center;
-}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .brand img{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25)}
+    .brandTitle{display:flex;flex-direction:column;line-height:1.1}
+    .kicker{color:var(--muted);font-weight:850;font-size:12px;letter-spacing:.2px;text-transform:uppercase}
+    .name{font-size:18px;font-weight:950;letter-spacing:.2px}
+    .pill{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 12px;border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(0,0,0,.16);
+      box-shadow:var(--shadow);
+      font-weight:950;font-size:12.5px;white-space:nowrap;
+    }
+    .dot{width:9px;height:9px;border-radius:999px;background:var(--ok);box-shadow:0 0 0 4px rgba(45,212,191,.16)}
 
-/* ---------- 2) RENAME the header + REMOVE bar ---------- */
-/* Works if your forecast header uses .fc48Title (from prior style) */
-.fc48Title{
-  font-size:0 !important;     /* hide existing text without changing HTML */
-  line-height:0 !important;
-  margin-bottom:8px;
-}
-.fc48Title::after{
-  content:"48 hour flood outlook";
-  font-size:12.5px;
-  line-height:1.2;
-  letter-spacing:.22px;
-  text-transform:uppercase;
-  color:var(--muted);
-  font-weight:950;
-}
+/* --- Mobile header overflow fix --- */
+.brand, .brandTitle { min-width: 0; }   /* allow shrink */
+.kicker, .name { min-width: 0; }        /* allow shrink */
 
-/* Hide the bar entirely (both your old bar and the "seg" system) */
-.fc48Bar,
-.fc48Bar *{
-  display:none !important;
-}
-
-/* Also hide any generic progress-looking bar you may still have */
-#fcBar, #fcBarWrap, .progressBar, .barRow{
-  display:none !important;
-}
-
-/* ---------- 3) MAKE the outlook minimal + attractive (CHIPS) ---------- */
-/* This assumes your durations (Minor/Moderate/Major/Below) live in .fc48Labels.
-   If it's a single line of text, this still helps by wrapping + shrinking nicely. */
-.fc48Labels{
-  display:flex !important;
-  justify-content:center !important;
-  align-items:center !important;
-  flex-wrap:wrap !important;
-  gap:8px !important;
-  margin-top:2px !important;
-  margin-bottom:6px !important;
-  font-size:12.5px !important;
-  font-weight:950 !important;
-  color:rgba(234,240,255,.92) !important;
+/* Default: truncate long station text */
+.kicker, .name{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* If your labels are split into children (div/span), they become pills */
-.fc48Labels > *{
-  display:inline-flex !important;
-  align-items:center !important;
-  gap:8px !important;
-  padding:8px 10px !important;
-  border-radius:999px !important;
-  border:1px solid var(--line) !important;
-  background:rgba(255,255,255,.05) !important;
-  box-shadow: 0 10px 26px rgba(0,0,0,.28) !important;
-  white-space:nowrap !important;
+#lastPill, #stagePill, #datumBtn{
+  min-width: 0;
 }
 
-/* Color hints (only apply if you used classes on the children) */
-.fc48Labels .minor{ color:var(--minor) !important; }
-.fc48Labels .moderate{ color:var(--moderate) !important; }
-.fc48Labels .major{ color:var(--major) !important; }
-.fc48Labels .below{ color:rgba(234,240,255,.85) !important; }
-
-/* If your durations are just ONE text node (no children),
-   at least keep it readable + centered and not huge */
-.fc48Labels{
-  text-align:center !important;
-  line-height:1.25 !important;
+/* Let pills shrink instead of overflowing */
+.pill{
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Make the small meta line tighter */
-.fc48Meta{
-  text-align:center !important;
-  color:var(--muted) !important;
-  font-size:12px !important;
-  line-height:1.25 !important;
-  margin-top:2px !important;
-}
+/* Mobile: stack + allow wrap */
+@media (max-width: 720px){
+  .top{
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+  }
 
-/* ---------- 4) COMPACT "Forecasted flood windows" text ---------- */
-/* Your screenshot shows:
-   Minor
-   Feb 02, 2026, 08:45 AM → Feb 02, 2026, 10:30 AM
-   1.8h
-   We can't rewrite text purely with CSS, but we can:
-   - shrink it
-   - tighten spacing
-   - keep the date range on one line (ellipsis if needed)
-   - hide the trailing duration line IF it's in its own element (common) */
+  .brand{
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
 
-/* The whole block (use whichever ID/class you already have) */
-#fcWindows, #forecastWindows, .fcWindows, .forecastWindows{
-  margin-top:8px !important;
-  padding-top:6px !important;
-  border-top:1px solid rgba(255,255,255,.07) !important;
-}
+  .brandTitle{
+    align-items: center;
+    text-align: center;
+  }
 
-/* Title line */
-#fcWindows h3,
-#forecastWindows h3,
-.fcWindows h3,
-.forecastWindows h3{
-  margin:0 0 6px 0 !important;
-  font-size:12px !important;
-  letter-spacing:.16px !important;
-  text-transform:uppercase !important;
-  color:var(--muted) !important;
-  font-weight:950 !important;
-  text-align:left !important;
-}
+  /* On mobile: wrap text instead of ellipsis */
+  .kicker, .name{
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
 
-/* Make lines smaller + tighter */
-#fcWindows, #forecastWindows, .fcWindows, .forecastWindows{
-  font-size:13px !important;
-  line-height:1.25 !important;
-}
+  /* Center the pills row */
+  .top > div{
+    width: 100%;
+    justify-content: center !important;
+    flex-wrap: wrap;
+  }
 
-/* If the date range is in a dedicated element, force it to a single optimized line */
-#fcWindows .range,
-#forecastWindows .range,
-.fcWindows .range,
-.forecastWindows .range,
-#fcWindows .windowLine,
-#forecastWindows .windowLine,
-.fcWindows .windowLine,
-.forecastWindows .windowLine{
-  display:block !important;
-  font-weight:950 !important;
-  font-size:13px !important;
-  white-space:nowrap !important;
-  overflow:hidden !important;
-  text-overflow:ellipsis !important;
-}
-
-/* If duration ("1.8h") is in its own element, hide it for minimal text */
-#fcWindows .dur,
-#forecastWindows .dur,
-.fcWindows .dur,
-.forecastWindows .dur,
-#fcWindows .hours,
-#forecastWindows .hours,
-.fcWindows .hours,
-.forecastWindows .hours{
-  display:none !important;
-}
-
-/* Make the category label (Minor/Moderate/Major) look like a subtle chip */
-#fcWindows .level,
-#forecastWindows .level,
-.fcWindows .level,
-.forecastWindows .level{
-  display:inline-flex !important;
-  align-items:center !important;
-  padding:6px 10px !important;
-  border-radius:999px !important;
-  border:1px solid var(--line) !important;
-  background:rgba(255,255,255,.05) !important;
-  font-weight:950 !important;
-  margin-bottom:6px !important;
-}
-
-/* ---------- 5) ENSURE Minor/Moderate/Major NEVER fall off screen ---------- */
-/* Your thresholds row is .stages in prior code; stop horizontal cut-off on desktop */
-.stages{
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  overflow-x: hidden !important;
-}
-
-/* If the container is too tight on small screens, stack them cleanly */
-@media (max-width: 980px){
-  .stages{
-    grid-template-columns: 1fr !important;
-    overflow-x: visible !important;
+  .pill, .btn{
+    max-width: 100%;
   }
 }
 
-/* Keep stage name + badge from forcing overflow */
-.stage{
-  min-width: 0 !important;
-}
-.stageName{
-  min-width:0 !important;
-  overflow:hidden !important;
-  text-overflow:ellipsis !important;
-}
-.badge{
-  max-width: 55% !important;
-  overflow:hidden !important;
-  text-overflow:ellipsis !important;
-}
 
-/* ---------- 6) CENTER Daily Range content INSIDE its card ---------- */
-/* Your daily range card is .rangeBox from prior code */
-.rangeBox{
-  text-align:center !important;
-}
-.rangeTitle{
-  text-align:center !important;
-}
-.rangeRow{
-  justify-content:center !important;
-}
-.rangeCol{
-  min-width: 180px !important;
-  text-align:center !important;
-}
-.rangeLab{
-  text-align:center !important;
-}
-.rangeVal{
-  text-align:center !important;
-}
-.rangeMeta{
-  text-align:center !important;
-}
+    .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:10px}
+    @media(max-width:980px){.grid{grid-template-columns:1fr}}
 
-/* ---------- 7) Forecast pane spacing: less empty space, more balance ---------- */
-.forecastPane{
-  width: min(1000px, 100%);
-  margin: 0 auto;
-  text-align:center;
-  gap:8px;
-  padding:14px 14px;
-}
-.fc48Wrap{
-  gap:8px;
-}
-</style>
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:14px;
+      overflow:hidden;
+      position:relative;
+    }
+    .card:before{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      pointer-events:none;
+      opacity:.9;
+      background:
+        radial-gradient(650px 280px at 16% 0%, rgba(45,212,191,.12), transparent 55%),
+        radial-gradient(520px 320px at 90% 18%, rgba(251,113,133,.10), transparent 60%);
+    }
+    .card>*{position:relative}
 
+    .hrow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+    .hrow h2{margin:0;font-size:12.5px;letter-spacing:.22px;text-transform:uppercase;color:var(--muted);font-weight:950}
 
+    /* ✅ FIXED: metrics is 2 columns on desktop, 1 on mobile */
+    .metrics{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 520px));
+      justify-content:center;
+      gap:10px;
+      margin-top:8px;
+    }
+    @media(max-width:720px){
+      .metrics{grid-template-columns:1fr}
+    }
+
+    .metric{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:88px}
+    .ml{color:var(--muted);font-weight:950;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px;margin-bottom:8px;text-align:center}
+    .mv{display:flex;align-items:baseline;justify-content:center;gap:8px;font-weight:950;font-size:28px;letter-spacing:.2px;text-align:center}
+    .unit{color:var(--muted);font-size:12px;font-weight:950}
+    .ms{margin-top:6px;color:var(--muted);font-size:12.5px;line-height:1.25;text-align:center}
+
+    .rangeBox{
+      margin-top:10px;
+      background:var(--card2);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      text-align:center;
+    }
+    .rangeTitle{color:var(--muted);font-weight:950;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px}
+    .rangeRow{display:flex;justify-content:center;gap:26px;flex-wrap:wrap;margin-top:8px}
+    .rangeCol{min-width:160px}
+    .rangeLab{color:var(--muted);font-weight:950;font-size:11px;letter-spacing:.18px;text-transform:uppercase}
+    .rangeVal{font-weight:950;font-size:36px;line-height:1;margin-top:6px}
+    .rangeMeta{color:var(--muted);font-size:12.5px;margin-top:8px}
+
+    .stages{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(220px,1fr));
+      gap:10px;
+      overflow-x:auto;
+      padding-bottom:2px;
+      -webkit-overflow-scrolling:touch;
+      margin-top:10px
+    }
+    @media(max-width:760px){.stages{grid-template-columns:1fr;overflow-x:visible}}
+    .stage{
+      background:var(--card2);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      min-width:220px;
+      overflow:hidden;
+    }
+    .stageName{font-weight:950;font-size:20px;letter-spacing:.2px;white-space:nowrap;flex:1 1 auto;min-width:0}
+    .badge{font-weight:950;font-size:13px;padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);white-space:nowrap;flex:0 0 auto}
+
+    .table{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card2)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 10px;border-bottom:1px solid var(--line);font-size:13px}
+    th{text-align:left;color:var(--muted);text-transform:uppercase;letter-spacing:.2px;font-size:11px;font-weight:950}
+    tr:last-child td{border-bottom:none}
+
+    .tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-weight:950;font-size:12px;white-space:nowrap}
+    .chip{width:9px;height:9px;border-radius:99px;display:inline-block}
+
+    .chartWrapTall{height:320px;width:100%}
+    .chartWrap{height:240px;width:100%}
+    .foot{margin-top:10px;color:var(--muted);font-size:12.5px;line-height:1.25;text-align:center}
+
+    .filterRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+    .input,.btn,select{
+      background:rgba(0,0,0,.18);
+      border:1px solid var(--line);
+      color:var(--text);
+      border-radius:12px;
+      padding:10px 10px;
+      font-weight:950;
+      font-size:13px;
+      outline:none
+    }
+    .input{min-width:240px}
+    .btn{cursor:pointer}
+    .btn:hover{filter:brightness(1.06)}
+    .hint{color:var(--muted);font-size:12.5px;line-height:1.25}
 </style>
 </head>
 
@@ -326,33 +291,29 @@
           <div class="ms" id="curMeta">Updated: —</div>
           <div class="ms" id="nearMeta" style="display:none"></div>
         </div>
-<div class="metric" id="fc48Card" style="grid-column:1 / -1; min-height:unset;">
-  <div class="ml">48-hour forecast flood stage (NOAA/PETSS)</div>
 
-  <!-- stacked duration bar -->
-  <div class="fc48Bar" aria-label="48h forecast duration bar">
-    <div class="seg below"   id="fc48SegBelow"   style="width:100%"></div>
-    <div class="seg minor"   id="fc48SegMinor"   style="width:0%"></div>
-    <div class="seg moderate" id="fc48SegModerate" style="width:0%"></div>
-    <div class="seg major"   id="fc48SegMajor"   style="width:0%"></div>
+        <div class="metric">
+          <div class="ml">Predicted range (next 24h)</div>
 
-    <!-- labels inside the bar -->
-    <div class="fc48BarLabels">
-      <span class="lbl minor" id="fc48LblMinor">Minor: 0.0h</span>
-      <span class="lbl moderate" id="fc48LblModerate">Moderate: 0.0h</span>
-      <span class="lbl major" id="fc48LblMajor">Major: 0.0h</span>
-      <span class="lbl below" id="fc48LblBelow">Below: 48.0h</span>
-    </div>
-  </div>
+          <div class="mv" style="gap:16px">
+            <span style="display:flex;align-items:baseline;gap:10px">
+              <span style="color:var(--muted);font-size:12px;font-weight:950;letter-spacing:.2px;text-transform:uppercase">Max</span>
+              <span id="pred24MaxFt">—</span>
+              <span class="unit" data-unit>ft MLLW</span>
+            </span>
+          </div>
 
-  <!-- meta + time windows -->
-  <div class="ms" id="fc48Meta">—</div>
+          <div class="mv" style="gap:16px;margin-top:6px">
+            <span style="display:flex;align-items:baseline;gap:10px">
+              <span style="color:var(--muted);font-size:12px;font-weight:950;letter-spacing:.2px;text-transform:uppercase">Min</span>
+              <span id="pred24MinFt">—</span>
+              <span class="unit" data-unit>ft MLLW</span>
+            </span>
+          </div>
 
-  <div class="fc48Windows" id="fc48Windows" style="display:none">
-    <div class="fc48WindowsTitle">Forecasted flood windows (EST)</div>
-    <div class="fc48WindowsList" id="fc48WindowsList"></div>
-  </div>
-</div>
+          <div class="ms" id="pred24Meta">—</div>
+        </div>
+      </div>
 
       <div class="rangeBox">
         <div class="rangeTitle">Daily range (today)</div>
@@ -541,238 +502,6 @@
     <div style="height:14px"></div>
 
     <script>
-
-      /* =========================
-48h forecast flood stage summary
-- Uses STATE.pred72Mllw (MLLW)
-- Resamples to 15-min and classifies in DISPLAY_DATUM
-========================= */
-function classifyByDisplayFt(ftDisplay){
-  const T = THRESH[DISPLAY_DATUM];
-  if(ftDisplay >= T.majorLow) return "Major";
-  if(ftDisplay >= T.moderateLow) return "Moderate";
-  if(ftDisplay >= T.minorLow) return "Minor";
-  return "Below";
-}
-
-function colorForStage(stage){
-  if(stage==="Major") return "var(--major)";
-  if(stage==="Moderate") return "var(--moderate)";
-  if(stage==="Minor") return "var(--minor)";
-  return "rgba(255,255,255,.25)";
-}
-
-function computeForecast48hFromState(){
-  const predAll = STATE.pred72Mllw || [];
-  if(!predAll.length) return null;
-
-  // --- match your chart logic for forecast start ---
-  const endISO = nowISO();
-  const lastObsT = (STATE.obs24Navd && STATE.obs24Navd.length)
-    ? STATE.obs24Navd[STATE.obs24Navd.length - 1].t
-    : endISO;
-
-  const lastObsMs = new Date(lastObsT).getTime();
-  const predStartMs = floorToHourMs(lastObsMs) + HOUR_MS;
-  const predStartISO = new Date(predStartMs).toISOString();
-
-  const predEndMs48 = predStartMs + 48*3600*1000;
-  const predEndISO48 = new Date(predEndMs48).toISOString();
-
-  // clip raw forecast to 48h window
-  const predRaw = predAll
-    .map(p => ({ t:p.t, ft:Number(p.ft) }))
-    .filter(p=>{
-      const tMs = new Date(p.t).getTime();
-      return p.t && Number.isFinite(p.ft) && Number.isFinite(tMs)
-        && tMs >= predStartMs
-        && tMs <= predEndMs48;
-    })
-    .sort((a,b)=> new Date(a.t) - new Date(b.t));
-
-  if(!predRaw.length) return null;
-
-  // resample to 15-min grid (so "hours" calculation is stable)
-  const res = resampleTo15Min_MLLW(predRaw, predStartISO, predEndISO48);
-
-  // build classified timeline
-  const slots = []; // [{tMs, stage}]
-  for(let i=0;i<res.labels.length;i++){
-    const tMs = new Date(res.labels[i]).getTime();
-    const mllw = res.values[i];
-    if(!Number.isFinite(tMs)) continue;
-
-    if(!Number.isFinite(mllw)){
-      slots.push({ tMs, stage:null, ftDisplay:null });
-      continue;
-    }
-
-    const ftDisplay = toDisplayFtFromMllw(mllw);
-    const stage = classifyByDisplayFt(ftDisplay);
-    slots.push({ tMs, stage, ftDisplay });
-  }
-
-  // count hours by stage (each slot is 15-min)
-  const stepHours = TS_STEP_MIN / 60; // 0.25
-  let hBelow=0, hMinor=0, hModer=0, hMajor=0;
-
-  for(const s of slots){
-    if(!s.stage) continue; // missing forecast points
-    if(s.stage==="Major") hMajor += stepHours;
-    else if(s.stage==="Moderate") hModer += stepHours;
-    else if(s.stage==="Minor") hMinor += stepHours;
-    else hBelow += stepHours;
-  }
-
-  // build contiguous "flood windows" where stage >= Minor
-  // also split windows when stage category changes (Minor->Moderate->Major etc)
-  const windows = [];
-  let cur = null;
-
-  function pushCur(){
-    if(!cur) return;
-    // minimum duration: at least 1 slot
-    if(cur.endMs > cur.startMs) windows.push(cur);
-    cur = null;
-  }
-
-  for(let i=0;i<slots.length;i++){
-    const s = slots[i];
-    if(!s.stage){
-      pushCur();
-      continue;
-    }
-
-    const isFlood = (s.stage==="Minor" || s.stage==="Moderate" || s.stage==="Major");
-
-    if(!isFlood){
-      pushCur();
-      continue;
-    }
-
-    if(!cur){
-      cur = { stage:s.stage, startMs:s.tMs, endMs:s.tMs + TS_STEP_MS };
-      continue;
-    }
-
-    // if stage changes, close and start a new window
-    if(s.stage !== cur.stage){
-      pushCur();
-      cur = { stage:s.stage, startMs:s.tMs, endMs:s.tMs + TS_STEP_MS };
-      continue;
-    }
-
-    // extend window
-    cur.endMs = s.tMs + TS_STEP_MS;
-  }
-  pushCur();
-
-  // total hours across stages (ignore missing)
-  const totalKnown = hBelow + hMinor + hModer + hMajor;
-
-  return {
-    predStartISO,
-    predEndISO48,
-    hours: { below:hBelow, minor:hMinor, moderate:hModer, major:hMajor, totalKnown },
-    windows
-  };
-}
-
-function renderForecast48hPanel(){
-  const segBelow = $("fc48SegBelow");
-  const segMinor = $("fc48SegMinor");
-  const segModer = $("fc48SegModerate");
-  const segMajor = $("fc48SegMajor");
-
-  const lblBelow = $("fc48LblBelow");
-  const lblMinor = $("fc48LblMinor");
-  const lblModer = $("fc48LblModerate");
-  const lblMajor = $("fc48LblMajor");
-
-  const metaEl = $("fc48Meta");
-  const winBox = $("fc48Windows");
-  const winList = $("fc48WindowsList");
-
-  if(!segBelow || !segMinor || !segModer || !segMajor || !metaEl) return;
-
-  const out = computeForecast48hFromState();
-  if(!out){
-    segMinor.style.width = "0%";
-    segModer.style.width = "0%";
-    segMajor.style.width = "0%";
-    if(lblMinor) lblMinor.textContent = "Minor: —";
-    if(lblModer) lblModer.textContent = "Moderate: —";
-    if(lblMajor) lblMajor.textContent = "Major: —";
-    if(lblBelow) lblBelow.textContent = "Below: —";
-    metaEl.textContent = "NOAA/PETSS forecast unavailable (48h)";
-    if(winBox) winBox.style.display = "none";
-    return;
-  }
-
-  const { predStartISO, predEndISO48, hours, windows } = out;
-
-  // percentages based on known forecast duration
-  const denom = Math.max(0.001, hours.totalKnown || 48);
-  const pMinor = (hours.minor / denom) * 100;
-  const pModer = (hours.moderate / denom) * 100;
-  const pMajor = (hours.major / denom) * 100;
-
-  // stack from left: minor + moderate + major over "below"
-  // we'll position each segment by cumulative left offset
-  let left = 0;
-  segMinor.style.left = left + "%";
-  segMinor.style.width = pMinor.toFixed(3) + "%";
-  left += pMinor;
-
-  segModer.style.left = left + "%";
-  segModer.style.width = pModer.toFixed(3) + "%";
-  left += pModer;
-
-  segMajor.style.left = left + "%";
-  segMajor.style.width = pMajor.toFixed(3) + "%";
-
-  // labels
-  if(lblMinor) lblMinor.textContent = `Minor: ${hours.minor.toFixed(1)}h`;
-  if(lblModer) lblModer.textContent = `Moderate: ${hours.moderate.toFixed(1)}h`;
-  if(lblMajor) lblMajor.textContent = `Major: ${hours.major.toFixed(1)}h`;
-
-  // below = remainder to 48h (use 48h, not only-known)
-  const below48 = Math.max(0, 48 - (hours.minor + hours.moderate + hours.major));
-  if(lblBelow) lblBelow.textContent = `Below: ${below48.toFixed(1)}h`;
-
-  metaEl.textContent =
-    `Window: ${fmtESTFull(predStartISO)} → ${fmtESTFull(predEndISO48)} · Thresholds shown in ${DISPLAY_DATUM}`;
-
-  // windows list
-  if(winBox && winList){
-    winList.innerHTML = "";
-
-    if(!windows.length){
-      winBox.style.display = "none";
-      return;
-    }
-
-    winBox.style.display = "block";
-
-    for(const w of windows){
-      const durH = (w.endMs - w.startMs) / 3600000;
-      const tr = document.createElement("div");
-      tr.className = "fcWin";
-      tr.innerHTML = `
-        <div class="fcWinLeft">
-          <span class="fcWinChip" style="background:${colorForStage(w.stage)}"></span>
-          <div style="min-width:0">
-            <div class="fcWinTitle" style="color:${colorForStage(w.stage)}">${w.stage}</div>
-            <div class="fcWinTime">${fmtESTFull(new Date(w.startMs).toISOString())} → ${fmtESTFull(new Date(w.endMs).toISOString())}</div>
-          </div>
-        </div>
-        <div class="fcWinRight">${durH.toFixed(1)}h</div>
-      `;
-      winList.appendChild(tr);
-    }
-  }
-}
-
 /* Fixed EST year-round (UTC-5). */
 const TZ="Etc/GMT+5";
 
@@ -2975,9 +2704,8 @@ async function updateTimeseries(){
   }
 
   // ✅ IMPORTANT: actually render the chart + 24h range card after STATE updates
-updateTsChartFromState();
-renderForecast48hPanel();
-
+  updateTsChartFromState();
+  updatePred24RangeCard();
 }
 
 
@@ -3287,8 +3015,8 @@ const oldDatum = DISPLAY_DATUM;
     dayMinFtEl.textContent = "—";
   }
 
-renderForecast48hPanel();
-updateTsChartFromState();
+  updatePred24RangeCard();
+  updateTsChartFromState();
 });
 
 
