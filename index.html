@@ -10,487 +10,388 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <style>
 <style>
-/* =========================================================
-BIVALVE DASHBOARD — BEAUTIFUL GLASS UI (DROP-IN)
-- Works even if Live Conditions content is mostly plain text
-- Still supports .metrics/.metric if present
-- Fixes massive empty space + improves hierarchy
-========================================================= */
+  :root{
+    --bg:#0b1220;
+    --text:#eaf0ff;
+    --muted:#a9b6d3;
+    --line:rgba(255,255,255,.085);
+    --ok:#2dd4bf;
+    --minor:#fbbf24;
+    --moderate:#fb7185;
+    --major:#a78bfa;
+    --shadow:0 22px 70px rgba(0,0,0,.40);
+    --radius:18px;
+    --card:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+    --card2:rgba(0,0,0,.18);
+  }
 
-/* ---------- Theme ---------- */
-:root{
-  --bg0:#070b14;
-  --bg1:#0b1220;
-  --text:#ecf2ff;
-  --muted:#a9b6d3;
-  --soft:rgba(255,255,255,.08);
-  --line:rgba(255,255,255,.10);
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    background:
+      radial-gradient(1200px 650px at 15% -10%, rgba(34,211,238,.18), transparent 55%),
+      radial-gradient(1000px 600px at 92% 12%, rgba(167,139,250,.16), transparent 55%),
+      var(--bg);
+    color:var(--text);
+  }
+  .wrap{max-width:1200px;margin:0 auto;padding:16px 16px 28px}
+  a{color:inherit;text-decoration:none}
 
-  --ok:#2dd4bf;
-  --minor:#fbbf24;
-  --moderate:#fb7185;
-  --major:#a78bfa;
+  .banner{
+    display:none;
+    border:1px solid rgba(255,255,255,.12);
+    background: rgba(251,113,133,.12);
+    border-radius:14px;
+    padding:12px 12px;
+    margin-bottom:12px;
+    box-shadow:var(--shadow);
+  }
+  .banner b{font-weight:950}
+  .banner .small{color:var(--muted);font-size:12.5px;margin-top:4px;line-height:1.25}
 
-  --radius:18px;
-  --radius2:22px;
-  --shadow: 0 24px 80px rgba(0,0,0,.55);
-  --shadow2: 0 14px 50px rgba(0,0,0,.40);
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand img{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25)}
+  .brandTitle{display:flex;flex-direction:column;line-height:1.1}
+  .kicker{color:var(--muted);font-weight:850;font-size:12px;letter-spacing:.2px;text-transform:uppercase}
+  .name{font-size:18px;font-weight:950;letter-spacing:.2px}
+  .pill{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 12px;border-radius:999px;
+    border:1px solid var(--line);
+    background:rgba(0,0,0,.16);
+    box-shadow:var(--shadow);
+    font-weight:950;font-size:12.5px;white-space:nowrap;
+  }
+  .dot{width:9px;height:9px;border-radius:999px;background:var(--ok);box-shadow:0 0 0 4px rgba(45,212,191,.16)}
 
-  --glass: rgba(255,255,255,.055);
-  --glass2: rgba(255,255,255,.035);
+  /* --- Mobile header overflow fix --- */
+  .brand, .brandTitle { min-width: 0; }
+  .kicker, .name { min-width: 0; }
+  .kicker, .name{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  #lastPill, #stagePill, #datumBtn{ min-width:0; }
+  .pill{ max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 
-  --maxw: 1180px;
+  @media (max-width: 720px){
+    .top{
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      text-align:center;
+    }
+    .brand{width:100%;justify-content:center;text-align:center}
+    .brandTitle{align-items:center;text-align:center}
+    .kicker, .name{
+      white-space:normal;
+      overflow:visible;
+      text-overflow:clip;
+    }
+    .top > div{
+      width:100%;
+      justify-content:center !important;
+      flex-wrap:wrap;
+    }
+    .pill, .btn{ max-width:100%; }
+  }
 
-  --pad: 18px;
-  --gap: 14px;
-}
+  .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:10px}
+  @media(max-width:980px){.grid{grid-template-columns:1fr}}
 
-/* ---------- Base reset ---------- */
-*{ box-sizing:border-box; }
-html,body{ height:100%; }
-body{
-  margin:0;
-  color:var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-  background:
-    radial-gradient(1000px 720px at 12% -15%, rgba(125,211,252,.15), transparent 58%),
-    radial-gradient(900px 680px at 90% 0%, rgba(167,139,250,.13), transparent 62%),
-    radial-gradient(900px 700px at 45% 115%, rgba(45,212,191,.10), transparent 62%),
-    linear-gradient(180deg, var(--bg0), var(--bg1));
-}
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:14px;
+    overflow:hidden;
+    position:relative;
+  }
+  .card:before{
+    content:"";
+    position:absolute;
+    inset:-1px;
+    pointer-events:none;
+    opacity:.9;
+    background:
+      radial-gradient(650px 280px at 16% 0%, rgba(45,212,191,.12), transparent 55%),
+      radial-gradient(520px 320px at 90% 18%, rgba(251,113,133,.10), transparent 60%);
+  }
+  .card>*{position:relative}
 
-a{ color:inherit; text-decoration:none; }
-a:hover{ text-decoration:underline; text-decoration-color: rgba(255,255,255,.25); }
+  .hrow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .hrow h2{margin:0;font-size:12.5px;letter-spacing:.22px;text-transform:uppercase;color:var(--muted);font-weight:950}
 
-/* prevent grid/flex overflow */
-.wrap, .top, .card, .metrics, .metric, .table, .chartWrap, .chartWrapTall{ min-width:0; }
+  /* =========================================================
+     ✅ LIVE CONDITIONS TOP PANES (SPATIAL + INFO OPTIMIZED)
+     ========================================================= */
 
-/* ---------- Wrapper ---------- */
-.wrap{
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 18px 18px 28px;
-}
+  /* Put the live panes into a real dashboard grid */
+  .liveGrid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+    align-items:stretch;
+  }
 
-/* ---------- Top bar ---------- */
-.top{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 12px;
-  flex-wrap:wrap;
-  padding: 10px 12px;
-  border-radius: var(--radius2);
-  border: 1px solid rgba(255,255,255,.10);
-  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025));
-  box-shadow: var(--shadow2);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
+  /* Current tile (hero) */
+  .heroMetric{
+    background:var(--card2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+    min-height:118px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+  }
+  .heroMetric .ml{
+    text-align:left;
+    margin:0 0 10px 0;
+  }
+  .heroMetric .mv{
+    justify-content:flex-start;
+    font-size:46px;
+    gap:10px;
+  }
+  .heroMetric .unit{ font-size:13px; }
+  .heroMetric .ms{ text-align:left; }
 
-.brand{
-  display:flex;
-  align-items:center;
-  gap: 12px;
-  min-width:0;
-}
-.brand img{
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  object-fit: contain;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.08);
-  padding: 6px;
-}
-.brandTitle{ min-width:0; }
-.kicker{
-  font-size: 12px;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  color: rgba(236,242,255,.70);
-  line-height:1.2;
-}
-.name{
-  margin-top: 3px;
-  font-size: clamp(18px, 2.2vw, 26px);
-  font-weight: 950;
-  letter-spacing:-.02em;
-  line-height: 1.15;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-}
+  /* Forecast tile: occupies the right column, but can stretch */
+  .forecastPane{
+    background:var(--card2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+    min-height:118px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
 
-.pill{
-  display:inline-flex;
-  align-items:center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(0,0,0,.22);
-  font-size: 13px;
-  font-weight: 900;
-  color: rgba(236,242,255,.92);
-  white-space:nowrap;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-.dot{
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.35);
-  box-shadow: 0 0 0 4px rgba(255,255,255,.10);
-}
+  /* The bar itself (your JS can set widths on segments) */
+  .fc48Wrap{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .fc48Title{
+    color:var(--muted);
+    font-weight:950;
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:.2px;
+  }
+  .fc48Bar{
+    position:relative;
+    height:18px;
+    border-radius:999px;
+    background:rgba(255,255,255,.06);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .fc48Bar .seg{
+    position:absolute;
+    top:0; bottom:0;
+  }
+  .seg.minor{ background:rgba(251,191,36,.95); }
+  .seg.moderate{ background:rgba(251,113,133,.90); }
+  .seg.major{ background:rgba(167,139,250,.90); }
+  .seg.below{ background:rgba(255,255,255,.08); }
 
-/* ---------- Buttons / inputs ---------- */
-.btn{
-  appearance:none;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(0,0,0,.22);
-  color: var(--text);
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 950;
-  cursor:pointer;
-  transition: transform .12s ease, border-color .12s ease, background .12s ease;
-}
-.btn:hover{
-  transform: translateY(-1px);
-  border-color: rgba(255,255,255,.18);
-  background: rgba(0,0,0,.28);
-}
-.btn:active{ transform: translateY(0px); }
+  .fc48Labels{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+    font-size:12px;
+    font-weight:950;
+    color:rgba(234,240,255,.92);
+  }
+  .fc48Labels b{ font-weight:950; }
+  .fc48Meta{
+    color:var(--muted);
+    font-size:12.5px;
+    line-height:1.25;
+  }
 
-.input, select{
-  appearance:none;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(0,0,0,.22);
-  color: var(--text);
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  font-size: 14px;
-}
-.input::placeholder{ color: rgba(236,242,255,.45); }
-.input:focus, select:focus, .btn:focus{
-  outline:none;
-  border-color: rgba(255,255,255,.22);
-  box-shadow: 0 0 0 3px rgba(45,212,191,.14);
-}
+  /* Bottom row inside Live: Today Range + Thresholds */
+  .liveBottom{
+    grid-column: 1 / -1;
+    display:grid;
+    grid-template-columns: 1.1fr .9fr;
+    gap:10px;
+    align-items:start;
+    margin-top:10px;
+  }
 
-/* ---------- Banner ---------- */
-.banner{
-  display:none; /* shown via JS */
-  margin: 14px 0;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(239,68,68,.14);
-  box-shadow: 0 14px 40px rgba(0,0,0,.35);
-}
+  /* Make your existing rangeBox fit perfectly */
+  .rangeBox{
+    margin-top:0;
+    background:var(--card2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px;
+    text-align:left;
+  }
+  .rangeTitle{
+    color:var(--muted);
+    font-weight:950;
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:.2px
+  }
+  .rangeRow{
+    display:flex;
+    justify-content:flex-start;
+    gap:22px;
+    flex-wrap:wrap;
+    margin-top:10px
+  }
+  .rangeCol{min-width:160px}
+  .rangeLab{color:var(--muted);font-weight:950;font-size:11px;letter-spacing:.18px;text-transform:uppercase}
+  .rangeVal{font-weight:950;font-size:34px;line-height:1;margin-top:6px}
+  .rangeMeta{color:var(--muted);font-size:12.5px;margin-top:10px}
 
-/* ---------- Cards ---------- */
-.card{
-  margin-top: 14px;
-  padding: 18px 18px;
-  border-radius: var(--radius2);
-  border: 1px solid rgba(255,255,255,.10);
-  background: linear-gradient(180deg, var(--glass), var(--glass2));
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  position: relative;
-  overflow:hidden;
-}
-.card::before{
-  content:"";
-  position:absolute; inset:0;
-  background:
-    radial-gradient(720px 320px at 14% 12%, rgba(255,255,255,.09), transparent 60%),
-    radial-gradient(600px 260px at 95% 10%, rgba(167,139,250,.10), transparent 55%);
-  pointer-events:none;
-}
-.card > *{ position:relative; }
+  /* Threshold tile (minor/mod/major) — tighter + readable */
+  .threshPane{
+    background:var(--card2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px;
+  }
+  .threshTitle{
+    color:var(--muted);
+    font-weight:950;
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:.2px;
+    margin-bottom:10px;
+  }
+  .threshRow{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .threshItem{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 10px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.04);
+  }
+  .threshItem .left{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-width:0;
+  }
+  .chip{width:9px;height:9px;border-radius:99px;display:inline-block}
+  .chip.minor{background:var(--minor)}
+  .chip.moderate{background:var(--moderate)}
+  .chip.major{background:var(--major)}
+  .threshName{
+    font-weight:950;
+    letter-spacing:.2px;
+    white-space:nowrap;
+  }
+  .threshVal{
+    color:rgba(234,240,255,.92);
+    font-weight:950;
+    white-space:nowrap;
+  }
 
-/* ---------- Headings ---------- */
-h2{
-  margin:0 0 12px 0;
-  font-size: 22px;
-  font-weight: 950;
-  letter-spacing:-.02em;
-}
-.hrow{
-  display:flex;
-  align-items:baseline;
-  justify-content:space-between;
-  gap: 12px;
-  flex-wrap:wrap;
-  margin-bottom: 10px;
-}
-.hint{ color: rgba(236,242,255,.70); font-size: 13px; }
-.small{ color: rgba(236,242,255,.72); font-size: 12px; }
+  /* Mobile stacking: current, forecast, then bottom row stacks */
+  @media(max-width:920px){
+    .liveGrid{ grid-template-columns: 1fr; }
+    .liveBottom{ grid-template-columns: 1fr; }
+    .heroMetric .mv{ font-size:42px; }
+  }
 
-/* =========================================================
-LIVE CONDITIONS — make plain text look premium
-========================================================= */
+  /* =========================================================
+     EXISTING SECTIONS BELOW (UNCHANGED LOOK)
+     ========================================================= */
 
-/* Give the first card ("Live conditions") a strong layout even if content is plain text */
-.card p, .card div, .card span, .card li{
-  line-height: 1.45;
-}
+  /* metrics (kept for other cards that still use it) */
+  .metrics{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 520px));
+    justify-content:center;
+    gap:10px;
+    margin-top:8px;
+  }
+  @media(max-width:720px){
+    .metrics{grid-template-columns:1fr}
+  }
+  .metric{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:88px}
+  .ml{color:var(--muted);font-weight:950;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px;margin-bottom:8px;text-align:center}
+  .mv{display:flex;align-items:baseline;justify-content:center;gap:8px;font-weight:950;font-size:28px;letter-spacing:.2px;text-align:center}
+  .unit{color:var(--muted);font-size:12px;font-weight:950}
+  .ms{margin-top:6px;color:var(--muted);font-size:12.5px;line-height:1.25;text-align:center}
 
-/* Turn common "label then value" lines into clean blocks */
-.card .ml{
-  font-size: 12px;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  color: rgba(236,242,255,.70);
-  margin: 4px 0 6px;
-}
+  .stages{
+    display:grid;
+    grid-template-columns:repeat(3, minmax(220px,1fr));
+    gap:10px;
+    overflow-x:auto;
+    padding-bottom:2px;
+    -webkit-overflow-scrolling:touch;
+    margin-top:10px
+  }
+  @media(max-width:760px){.stages{grid-template-columns:1fr;overflow-x:visible}}
+  .stage{
+    background:var(--card2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    min-width:220px;
+    overflow:hidden;
+  }
+  .stageName{font-weight:950;font-size:20px;letter-spacing:.2px;white-space:nowrap;flex:1 1 auto;min-width:0}
+  .badge{font-weight:950;font-size:13px;padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);white-space:nowrap;flex:0 0 auto}
 
-/* Big current value if you have #curFt */
-#curFt{
-  font-size: clamp(38px, 5vw, 56px);
-  font-weight: 1000;
-  letter-spacing:-.03em;
-  line-height:1.0;
-  display:inline-block;
-  margin-right: 8px;
-}
+  .table{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--card2)}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  th{text-align:left;color:var(--muted);text-transform:uppercase;letter-spacing:.2px;font-size:11px;font-weight:950}
+  tr:last-child td{border-bottom:none}
 
-/* If you have unit text nearby */
-.unit{
-  font-size: 13px;
-  font-weight: 900;
-  color: rgba(236,242,255,.72);
-  white-space: nowrap;
-}
+  .tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-weight:950;font-size:12px;white-space:nowrap}
 
-/* Turn raw text blocks in Live Conditions into “chips” for readability */
-.card .kv,
-.card .line,
-.card .ms{
-  color: rgba(236,242,255,.78);
-  font-size: 13px;
-}
+  .chartWrapTall{height:320px;width:100%}
+  .chartWrap{height:240px;width:100%}
+  .foot{margin-top:10px;color:var(--muted);font-size:12.5px;line-height:1.25;text-align:center}
 
-/* Pretty divider line */
-.hr{
-  height:1px;
-  background: rgba(255,255,255,.08);
-  margin: 12px 0;
-  border:0;
-}
-
-/* Forecast “note” line */
-#fcNote, .foot, .ms{
-  margin-top: 10px;
-  font-size: 12px;
-  color: rgba(236,242,255,.62);
-}
-
-/* =========================================================
-IF YOU DO HAVE .metrics/.metric wrappers, make them gorgeous
-========================================================= */
-.metrics{
-  display:grid;
-  grid-template-columns: repeat(12, minmax(0,1fr));
-  gap: var(--gap);
-  align-items: stretch;
-}
-
-/* soft metric cards */
-.metric{
-  grid-column: span 4;
-  padding: 14px 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,.09);
-  background: rgba(0,0,0,.20);
-  box-shadow: 0 10px 40px rgba(0,0,0,.35);
-  overflow:hidden;
-}
-.metric[style*="grid-column:1 / -1"],
-.metric[style*="grid-column: 1 / -1"]{
-  grid-column: 1 / -1;
-}
-
-/* responsive metrics */
-@media (max-width: 980px){ .metric{ grid-column: span 6; } }
-@media (max-width: 620px){
-  .metrics{ grid-template-columns: 1fr; }
-  .metric{ grid-column: 1 / -1; }
-}
-
-/* nice “label + value” inside metric boxes */
-.mv{
-  display:flex;
-  align-items:baseline;
-  gap: 8px;
-}
-.mv > span[id$="Ft"], .mv > span[id*="Ft"]{
-  font-size: clamp(30px, 4.2vw, 50px);
-  font-weight: 1000;
-  letter-spacing:-.03em;
-  line-height:1.0;
-}
-
-/* =========================================================
-PETSS 48H BAR (if present)
-========================================================= */
-.fc48Bar{
-  position: relative;
-  height: 18px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.06);
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,.10);
-}
-.fc48Bar .seg{ position:absolute; top:0; bottom:0; width:0%; }
-.fc48Bar .seg.below{ left:0; width:100%; background: rgba(255,255,255,.06); }
-.fc48Bar .seg.minor{ background: rgba(251,191,36,.92); }
-.fc48Bar .seg.moderate{ background: rgba(251,113,133,.88); }
-.fc48Bar .seg.major{ background: rgba(167,139,250,.88); }
-
-.fc48BarLabels{
-  position:absolute; inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 950;
-  color: rgba(236,242,255,.92);
-  text-shadow: 0 1px 12px rgba(0,0,0,.55);
-  white-space: nowrap;
-  pointer-events:none;
-}
-@media (max-width: 520px){ .fc48BarLabels{ display:none; } }
-
-/* =========================================================
-Stages (Minor / Moderate / Major)
-========================================================= */
-.stages{
-  display:grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
-  gap: var(--gap);
-}
-.stage{
-  padding: 14px 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,.09);
-  background: rgba(0,0,0,.20);
-}
-.stageName{
-  font-size: 12px;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  color: rgba(236,242,255,.70);
-  margin-bottom: 10px;
-}
-.badge{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,.22);
-  border: 1px solid rgba(255,255,255,.12);
-  font-weight: 1000;
-  font-size: 14px;
-}
-@media (max-width: 620px){
-  .stages{ grid-template-columns: 1fr; }
-}
-
-/* =========================================================
-Charts
-========================================================= */
-.chartWrap, .chartWrapTall{
-  width: 100%;
-  border-radius: 18px;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.10);
-  overflow:hidden;
-  padding: 10px 10px;
-}
-.chartWrap{ height: 320px; }
-.chartWrapTall{ height: 420px; }
-@media (max-width: 620px){
-  .chartWrap{ height: 300px; }
-  .chartWrapTall{ height: 380px; }
-}
-
-/* =========================================================
-Tables — make them look modern + readable
-========================================================= */
-.table{
-  width:100%;
-  overflow:auto;
-  -webkit-overflow-scrolling: touch;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(0,0,0,.16);
-}
-table{
-  width:100%;
-  border-collapse: collapse;
-  min-width: 620px; /* avoids ugly wrap; allows horizontal scroll */
-}
-thead th{
-  text-align:left;
-  font-size: 12px;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  color: rgba(236,242,255,.72);
-  padding: 12px 12px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-  background: rgba(0,0,0,.20);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-tbody td{
-  padding: 12px 12px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-  color: rgba(236,242,255,.88);
-  font-size: 14px;
-}
-tbody tr:hover td{ background: rgba(255,255,255,.03); }
-
-/* =========================================================
-Mobile tightening
-========================================================= */
-@media (max-width: 520px){
-  .wrap{ padding: 14px 14px 22px; }
-  .top{ padding: 10px 10px; }
-  .card{ padding: 14px 14px; }
-  .brand img{ width: 40px; height: 40px; }
-  .pill{ font-size: 12px; padding: 7px 10px; }
-  h2{ font-size: 19px; }
-}
-
-/* ---------------------------------------------------------
-Optional: Make "Live conditions" card content not look like
-a wall of text even if you didn't wrap anything.
-If your live text is inside a single container (like #liveText),
-you can add class "prose" to it and it will auto-format.
---------------------------------------------------------- */
-.prose{
-  display:grid;
-  gap: 10px;
-}
-.prose .block{
-  padding: 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(0,0,0,.18);
-}
+  .filterRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .input,.btn,select{
+    background:rgba(0,0,0,.18);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:12px;
+    padding:10px 10px;
+    font-weight:950;
+    font-size:13px;
+    outline:none
+  }
+  .input{min-width:240px}
+  .btn{cursor:pointer}
+  .btn:hover{filter:brightness(1.06)}
+  .hint{color:var(--muted);font-size:12.5px;line-height:1.25}
 </style>
+
 
 </style>
 </head>
