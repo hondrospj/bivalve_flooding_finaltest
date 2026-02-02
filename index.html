@@ -1729,7 +1729,7 @@ tooltip:{
 }
 
 
-/* Build 15-min grids + apply spike filter + compose into one label array */
+/* Build 15-min obs grid + plot RAW PETSS predictions (no interpolation) */
 function updateTsChartFromState(){
   const endISO = nowISO();
   const startObsISO = new Date(new Date(endISO).getTime() - 24*3600*1000).toISOString();
@@ -1740,27 +1740,65 @@ function updateTsChartFromState(){
   obsValsNavd = filterSpikes15Min(obsValsNavd, TS_MAX_DELTA_FT);
   const obsValsDisplay = obsValsNavd.map(v => (v===null ? null : toDisplayFtFromNavd(v)));
 
-  /* Predictions: 6-min -> 15-min grid (MLLW), then convert to display */
- const predStartISO = ceilToNext15MinISO(obsGrid.labels[obsGrid.labels.length-1] || endISO);
+  /* Predictions: RAW PETSS points (MLLW) — NO resampling */
+  const predStartISO = obsGrid.labels[obsGrid.labels.length-1] || endISO;
   const predEndISO = new Date(new Date(predStartISO).getTime() + 72*3600*1000).toISOString();
 
-  const predGrid = resampleTo15Min_MLLW(STATE.pred72Mllw || [], predStartISO, predEndISO);
-  let predValsMllw = predGrid.values.map(v => (v===null ? null : v));
+  const predRaw = (STATE.pred72Mllw || [])
+    .map(p => ({ t: p.t, ft: Number(p.ft) }))
+    .filter(p => {
+      if(!p.t || !Number.isFinite(p.ft)) return false;
+      const tt = new Date(p.t).getTime();
+      return Number.isFinite(tt)
+        && tt >= new Date(predStartISO).getTime()
+        && tt <= new Date(predEndISO).getTime();
+    })
+    .sort((a,b)=> new Date(a.t) - new Date(b.t));
+
+  const predLabels = predRaw.map(p => p.t);
+
+  let predValsMllw = predRaw.map(p => p.ft);
+
+  // Optional: keep spike filter (it now just filters big jumps between adjacent raw points)
   predValsMllw = filterSpikes15Min(predValsMllw, TS_MAX_DELTA_FT);
+
   const predValsDisplay = predValsMllw.map(v => (v===null ? null : toDisplayFtFromMllw(v)));
 
-  /* Combine: obs labels + pred labels (pred begins immediately after obs window) */
-  const labels = [...obsGrid.labels, ...predGrid.labels];
-  const obsData = [...obsValsDisplay, ...Array(predGrid.labels.length).fill(null)];
+  /* Combine: obs labels + pred raw labels */
+  const labels = [...obsGrid.labels, ...predLabels];
+  const obsData = [...obsValsDisplay, ...Array(predLabels.length).fill(null)];
   const predData = [...Array(obsGrid.labels.length).fill(null), ...predValsDisplay];
 
   ensureTsChart();
-tsChart.data.labels = labels;
-tsChart.data.datasets[0].data = obsData;
-tsChart.data.datasets[1].data = predData;
+  tsChart.data.labels = labels;
+  tsChart.data.datasets[0].data = obsData;
+  tsChart.data.datasets[1].data = predData;
 
-tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
-tsChart.options.scales.y.title.text = unitText();
+  tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
+  tsChart.options.scales.y.title.text = unitText();
+
+  // ---- HARD SCALE Y TO INCLUDE THRESHOLDS ----
+  const {minor, moderate, major} = thresholdsDisplay();
+
+  const ys = [...obsValsDisplay, ...predValsDisplay].filter(v => Number.isFinite(v));
+  ys.push(minor, moderate, major);
+
+  let yMin = Math.min(...ys);
+  let yMax = Math.max(...ys);
+  const pad = Math.max(0.25, (yMax - yMin) * 0.08);
+  yMin -= pad;
+  yMax += pad;
+
+  const STEP = 1.0;
+  yMin = Math.floor(yMin / STEP) * STEP;
+  yMax = Math.ceil(yMax / STEP) * STEP;
+
+  tsChart.options.scales.y.min = yMin;
+  tsChart.options.scales.y.max = yMax;
+  tsChart.options.scales.y.ticks.stepSize = STEP;
+
+  tsChart.update();
+}
 
   
 // ---- HARD SCALE Y TO INCLUDE THRESHOLDS ----
