@@ -1767,67 +1767,123 @@ tooltip:{
 
 
 /* Build 15-min obs grid + plot RAW PETSS predictions (no interpolation) */
+function isTopOfHourISO(iso){
+  const d = new Date(iso);
+  return d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+}
+
+// Build 15-min labels only (no values)
+function build15MinLabels(startISO, endISO){
+  const start = new Date(startISO).getTime();
+  const end   = new Date(endISO).getTime();
+
+  const s0 = Math.floor(start/TS_STEP_MS)*TS_STEP_MS;
+  const e0 = Math.ceil(end/TS_STEP_MS)*TS_STEP_MS;
+
+  const labels = [];
+  for(let t = s0; t <= e0; t += TS_STEP_MS){
+    labels.push(new Date(t).toISOString());
+  }
+  return labels;
+}
+
 function updateTsChartFromState(){
   const endISO = nowISO();
   const startObsISO = new Date(new Date(endISO).getTime() - 24*3600*1000).toISOString();
 
-  // Forecast window: start at next hour after last obs timestamp (or now)
+  // last obs timestamp (or now)
   const lastObsT = (STATE.obs24Navd && STATE.obs24Navd.length)
     ? STATE.obs24Navd[STATE.obs24Navd.length - 1].t
     : endISO;
 
-  const predStartMs = floorToHourMs(new Date(lastObsT).getTime() + 1); // next hour
+  // ✅ predictions start at NEXT hour
+  const lastObsMs = new Date(lastObsT).getTime();
+  const predStartMs = floorToHourMs(lastObsMs) + HOUR_MS;
   const predStartISO = new Date(predStartMs).toISOString();
   const predEndISO   = new Date(predStartMs + 72*3600*1000).toISOString();
+  const predEndMs    = new Date(predEndISO).getTime();
 
-  // ✅ ONE axis: hourly labels covering obs + forecast
-  const labels = buildHourlyLabels(startObsISO, predEndISO);
+  // ✅ 15-min axis from obs start → forecast end
+  const labels = build15MinLabels(startObsISO, predEndISO);
 
-  // ---- Observed (NAVD88) -> hourly (last-in-hour) -> display datum
-  const obsMapNavd = seriesToHourlyLast(STATE.obs24Navd || []);
-  let obsValsNavd = mapToHourlyValues(labels, obsMapNavd);
+  // -------------------------
+  // Observed (NAVD88) -> 15-min grid -> display
+  // -------------------------
+  const obsGrid = buildFixedGrid15Min_fromAny(STATE.obs24Navd || [], startObsISO, endISO);
+  // obsGrid.labels covers only obs window; we need values over the full label axis
+  // So: map obs points onto the full labels using the same snap logic
 
-  // optional: spike filter works fine on hourly too
-  obsValsNavd = filterSpikes15Min(obsValsNavd, TS_MAX_DELTA_FT); // name is old, but logic OK
+  const obsMap = new Map();
+  for(const p of (STATE.obs24Navd || [])){
+    const t = new Date(p.t).getTime();
+    const ft = Number(p.ft);
+    if(!Number.isFinite(t) || !Number.isFinite(ft)) continue;
+    const snapped = Math.round(t/TS_STEP_MS)*TS_STEP_MS;
+    obsMap.set(snapped, ft);
+  }
 
-  const obsValsDisplay = obsValsNavd.map(v => (v==null ? null : toDisplayFtFromNavd(v)));
+  const obsValsDisplay = labels.map(iso=>{
+    const t = new Date(iso).getTime();
+    const v = obsMap.has(t) ? obsMap.get(t) : null;
+    return (v==null) ? null : toDisplayFtFromNavd(v);
+  });
 
-  // ---- Predicted (MLLW) -> hourly (last-in-hour) -> display datum
-  // IMPORTANT: only keep points inside [predStartISO, predEndISO]
+  // (optional) keep your spike filter for OBS only (15-min makes sense)
+  const obsFiltered = filterSpikes15Min(
+    obsValsDisplay.map(v => (Number.isFinite(v) ? v : null)),
+    TS_MAX_DELTA_FT
+  );
+
+  // -------------------------
+  // Predicted (MLLW) -> HOURLY ONLY -> display placed only on top-of-hour ticks
+  // -------------------------
   const predRaw = (STATE.pred72Mllw || [])
     .map(p => ({ t:p.t, ft:Number(p.ft) }))
     .filter(p=>{
       const tMs = new Date(p.t).getTime();
       return p.t && Number.isFinite(p.ft) && Number.isFinite(tMs)
         && tMs >= predStartMs
-        && tMs <= new Date(predEndISO).getTime();
+        && tMs <= predEndMs;
     });
 
-  const predMapMllw = seriesToHourlyLast(predRaw);
-  let predValsMllw = mapToHourlyValues(labels, predMapMllw);
-  predValsMllw = filterSpikes15Min(predValsMllw, TS_MAX_DELTA_FT);
+  // Hour-bucket (last-in-hour)
+  const predHourMap = new Map(); // hourMs -> ft (MLLW)
+  for(const p of predRaw){
+    const tMs = new Date(p.t).getTime();
+    const ft  = Number(p.ft);
+    if(!Number.isFinite(tMs) || !Number.isFinite(ft)) continue;
+    predHourMap.set(floorToHourMs(tMs), ft);
+  }
 
-  const predValsDisplay = predValsMllw.map(v => (v==null ? null : toDisplayFtFromMllw(v)));
+  // Place ONLY at :00, else null
+  const predValsDisplay = labels.map(iso=>{
+    if(!isTopOfHourISO(iso)) return null;
+    const h = floorToHourMs(new Date(iso).getTime());
+    if(!predHourMap.has(h)) return null;
+    const mllw = predHourMap.get(h);
+    return toDisplayFtFromMllw(mllw);
+  });
 
-  // ---- Plot
+  // -------------------------
+  // Plot
+  // -------------------------
   ensureTsChart();
   tsChart.data.labels = labels;
-  tsChart.data.datasets[0].data = obsValsDisplay;
-  tsChart.data.datasets[1].data = predValsDisplay;
+  tsChart.data.datasets[0].data = obsFiltered;     // observed 15-min
+  tsChart.data.datasets[1].data = predValsDisplay; // predicted hourly-only
 
   tsChart.options.scales.x.ticks.callback = buildDailyTickCallbackSkipFirstDay(labels);
   tsChart.options.scales.y.title.text = unitText();
 
-  // ---- HARD SCALE Y TO INCLUDE THRESHOLDS ----
+  // y-scale includes thresholds
   const {minor, moderate, major} = thresholdsDisplay();
-  const ys = [...obsValsDisplay, ...predValsDisplay].filter(v => Number.isFinite(v));
+  const ys = [...obsFiltered, ...predValsDisplay].filter(v => Number.isFinite(v));
   ys.push(minor, moderate, major);
 
   let yMin = Math.min(...ys);
   let yMax = Math.max(...ys);
   const pad = Math.max(0.25, (yMax - yMin) * 0.08);
-  yMin -= pad;
-  yMax += pad;
+  yMin -= pad; yMax += pad;
 
   const STEP = 1.0;
   yMin = Math.floor(yMin / STEP) * STEP;
@@ -1838,6 +1894,15 @@ function updateTsChartFromState(){
   tsChart.options.scales.y.ticks.stepSize = STEP;
 
   tsChart.update();
+
+  // keep your debug line, but don’t keep appending forever:
+  if(fcNote){
+    const nObs  = obsFiltered.filter(v=>Number.isFinite(v)).length;
+    const nPred = predValsDisplay.filter(v=>Number.isFinite(v)).length;
+    fcNote.textContent =
+      (fcNote.textContent || "").split(" · Plot pts:")[0] +
+      ` · Plot pts: obs=${nObs}, pred=${nPred} · Window: ${fmtESTFull(startObsISO)} → ${fmtESTFull(predEndISO)}`;
+  }
 }
 
 
