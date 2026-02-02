@@ -1,5 +1,6 @@
 
 
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -354,7 +355,7 @@
 
     <!-- 2) Top 10 Highest Tides -->
     <div class="card" style="display:flex;flex-direction:column">
-      <div class="hrow"><h2>Top ten highest tides </h2></div>
+      <div class="hrow"><h2>Top ten highest tides</h2></div>
       <div class="table" style="flex:1 1 auto">
         <table aria-label="Top ten highest tides">
           <thead>
@@ -374,10 +375,10 @@
     
     <div style="height:14px"></div>
 
-    <!-- 3)  & Predictions -->
+    <!-- 3) Observations & Predictions -->
     <div class="card">
       <div class="hrow">
-        <h2>Observations (USGS) & Predictions (PETSS)</h2>
+        <h2>Observations (USGS) & Predictions (NOAA)</h2>
         <div class="kicker" style="text-transform:none"></div>
       </div>
 
@@ -435,7 +436,7 @@
     <!-- 5) Flooding over the years bar chart -->
     <div class="card">
       <div class="hrow">
-        <h2>Flooding over the years </h2>
+        <h2>Flooding over the years</h2>
         <div class="kicker" style="text-transform:none"></div>
       </div>
       <div class="chartWrap"><canvas id="annualChart"></canvas></div>
@@ -1680,7 +1681,7 @@ function ensureTsChart(){
       labels:[],
       datasets:[
         {
-          label:"Observed (USGS)",
+          label:"Observed (USGS water level)",
           data:[],
           borderWidth:2,
           pointRadius:0,
@@ -1698,7 +1699,7 @@ function ensureTsChart(){
           }
         },
         {
-          label:"Predicted (PETSS)",
+          label:"Predicted (NOAA)",
           data:[],
           borderWidth:2,
           pointRadius:0,
@@ -2690,7 +2691,8 @@ async function updateTimeseries(){
 
     if (STATE.pred72Mllw.length) {
       fcNote.textContent =
-        (issuedTime ? ``;
+        (issuedTime ? `NOAA/PETSS forecast issued: ${fmtESTFull(issuedTime)}` : "NOAA/PETSS forecast loaded") +
+        ` · Source: ${urlUsed}`;
     } else {
       fcNote.textContent = `NOAA/PETSS returned no points · Source: ${urlUsed}`;
     }
