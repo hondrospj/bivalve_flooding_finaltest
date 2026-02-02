@@ -1673,7 +1673,8 @@ function buildDailyTickCallbackSkipFirstDay(labels){
 /* Timeseries chart (Observed + Predicted), with NO LINE across null gaps */
 function ensureTsChart(){
   if(tsChart) return;
-  tsChart=new Chart($("tsChart"),{
+
+  tsChart = new Chart($("tsChart"),{
     type:"line",
     data:{
       labels:[],
@@ -1683,8 +1684,10 @@ function ensureTsChart(){
           data:[],
           borderWidth:2,
           pointRadius:0,
+          pointHoverRadius:0,
+          pointHitRadius:0,
           tension:0.25,
-          spanGaps:false, /* critical: do NOT connect across missing points */
+          spanGaps:false, // do NOT connect across missing obs
           borderColor:"rgba(45,212,191,.9)",
           segment:{
             borderColor:(ctx)=>{
@@ -1699,8 +1702,16 @@ function ensureTsChart(){
           data:[],
           borderWidth:2,
           pointRadius:0,
+          pointHoverRadius:0,
+          pointHitRadius:0,
           tension:0.25,
-          spanGaps:false, /* critical */
+
+          // ✅ IMPORTANT:
+          // If you keep hourly-only predictions with nulls between, this MUST be true
+          // or the line will be invisible (no dots + no segments).
+          // If you later resample predictions to 15-min, you can set this back to false.
+          spanGaps:true,
+
           borderDash:[6,5],
           borderColor:"rgba(45,212,191,.9)",
           segment:{
@@ -1716,54 +1727,60 @@ function ensureTsChart(){
     options:{
       responsive:true,
       maintainAspectRatio:false,
+      interaction:{ mode:"index", intersect:false },
+
       plugins:{
-        legend:{labels:{color:"rgba(234,240,255,.88)",font:{weight:"950"}}},
-tooltip:{
-  callbacks:{
-    title:(items)=>{
-      const idx = items?.[0]?.dataIndex;
-      if(idx == null) return "";
-      const iso = tsChart?.data?.labels?.[idx];
-      return iso ? fmtESTFull(iso) : "";
-    },
-    label:(ctx)=>{
-      const v = ctx.parsed?.y;
-      if(!Number.isFinite(v)) return null;
-      return `${ctx.dataset.label}: ${v.toFixed(2)} ${unitText()}`;
-    }
-  }
-}
-
-
+        legend:{
+          labels:{
+            color:"rgba(234,240,255,.88)",
+            font:{ weight:"950" }
+          }
+        },
+        tooltip:{
+          callbacks:{
+            title:(items)=>{
+              const idx = items?.[0]?.dataIndex;
+              if(idx == null) return "";
+              const iso = tsChart?.data?.labels?.[idx];
+              return iso ? fmtESTFull(iso) : "";
+            },
+            label:(ctx)=>{
+              const v = ctx.parsed?.y;
+              if(!Number.isFinite(v)) return null;
+              return `${ctx.dataset.label}: ${v.toFixed(2)} ${unitText()}`;
+            }
+          }
+        }
       },
-      interaction:{mode:"index",intersect:false},
+
       scales:{
         x:{
           ticks:{
             color:"rgba(169,182,211,.9)",
             autoSkip:false,
             maxRotation:0,
-            callback:()=>"" /* overwritten per update */
+            callback:()=>"" // overwritten in updateTsChartFromState()
           },
-          grid:{color:"rgba(255,255,255,.06)"}
+          grid:{ color:"rgba(255,255,255,.06)" }
         },
         y:{
           ticks:{
             color:"rgba(169,182,211,.9)",
-            font:{ size:14, weight:"850" }   // bigger Y-axis numbers
+            font:{ size:14, weight:"850" }
           },
-          grid:{color:"rgba(255,255,255,.06)"},
+          grid:{ color:"rgba(255,255,255,.06)" },
           title:{
             display:true,
-            text:unitText(),
+            text: unitText(),
             color:"rgba(169,182,211,.9)",
-            font:{ size:18, weight:"950" }   // bigger "ft MLLW"
+            font:{ size:18, weight:"950" }
           }
         }
       }
     }
   });
 }
+
 
 
 /* Build 15-min obs grid + plot RAW PETSS predictions (no interpolation) */
@@ -1834,35 +1851,36 @@ function updateTsChartFromState(){
     TS_MAX_DELTA_FT
   );
 
-  // -------------------------
-  // Predicted (MLLW) -> HOURLY ONLY -> display placed only on top-of-hour ticks
-  // -------------------------
-  const predRaw = (STATE.pred72Mllw || [])
-    .map(p => ({ t:p.t, ft:Number(p.ft) }))
-    .filter(p=>{
-      const tMs = new Date(p.t).getTime();
-      return p.t && Number.isFinite(p.ft) && Number.isFinite(tMs)
-        && tMs >= predStartMs
-        && tMs <= predEndMs;
-    });
-
-  // Hour-bucket (last-in-hour)
-  const predHourMap = new Map(); // hourMs -> ft (MLLW)
-  for(const p of predRaw){
+// -------------------------
+// Predicted (MLLW) -> resample to 15-min -> display
+// -------------------------
+const predRaw = (STATE.pred72Mllw || [])
+  .map(p => ({ t:p.t, ft:Number(p.ft) }))
+  .filter(p=>{
     const tMs = new Date(p.t).getTime();
-    const ft  = Number(p.ft);
-    if(!Number.isFinite(tMs) || !Number.isFinite(ft)) continue;
-    predHourMap.set(floorToHourMs(tMs), ft);
-  }
-
-  // Place ONLY at :00, else null
-  const predValsDisplay = labels.map(iso=>{
-    if(!isTopOfHourISO(iso)) return null;
-    const h = floorToHourMs(new Date(iso).getTime());
-    if(!predHourMap.has(h)) return null;
-    const mllw = predHourMap.get(h);
-    return toDisplayFtFromMllw(mllw);
+    return p.t && Number.isFinite(p.ft) && Number.isFinite(tMs)
+      && tMs >= predStartMs
+      && tMs <= predEndMs;
   });
+
+// Resample to 15-min grid (fills in-between so the line can draw)
+const predRes = resampleTo15Min_MLLW(predRaw, predStartISO, predEndISO);
+
+// Put resampled predictions onto the FULL axis labels
+const predMap = new Map(); // ms -> ft (MLLW)
+for(let i=0;i<predRes.labels.length;i++){
+  const ms = new Date(predRes.labels[i]).getTime();
+  const ft = predRes.values[i];
+  if(Number.isFinite(ms) && Number.isFinite(ft)) predMap.set(ms, ft);
+}
+
+const predValsDisplay = labels.map(iso=>{
+  const t = new Date(iso).getTime();
+  if(t < predStartMs || t > predEndMs) return null;
+  const mllw = predMap.get(t);
+  return Number.isFinite(mllw) ? toDisplayFtFromMllw(mllw) : null;
+});
+
 
   // -------------------------
   // Plot
