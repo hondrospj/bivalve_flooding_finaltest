@@ -446,8 +446,8 @@
       <a class="brand" href="https://cupajoe.live/" target="_blank" rel="noopener">
         <img src="assets/cupajoe-logo.png" alt="Cupajoe logo">
         <div class="brandTitle">
-          <div class="kicker">USGS 01412150 · Maurice River at , NJ</div>
-          <div class="name"> Tidal Flooding Dashboard</div>
+          <div class="kicker">USGS 01412150 · Maurice River at Bivalve, NJ</div>
+          <div class="name">Bivalve Tidal Flooding Dashboard</div>
         </div>
       </a>
 
@@ -734,7 +734,7 @@ const COOPS_INTERVAL="6";
 const COOPS_TZ="gmt";
 
       /* Tide-clock settings for crest-anchored highs (NOAA hilo predictions) */
-const NOAA_STATION_TIDECLOCK = "8535055"; // same station as COOPS_STATION ()
+const NOAA_STATION_TIDECLOCK = "8535055"; // same station as COOPS_STATION (Bivalve)
 const CREST_WINDOW_HOURS = 2;             // search max within ±2 hours of predicted crest
 const REQUIRE_WITHIN_HOURS = 1;           // must have at least one obs point within ±1 hour
 
@@ -794,7 +794,7 @@ const LIVE_START_ISO = "2026-01-01T00:00:00Z"; // use >= Jan 1 2026
 const ALERT_POINT={lat:39.2325, lon:-75.0380};
 
 /* TXT daily tides file */
-const DAILY_TIDES_TXT_FILE = "_daily_stats.txt";
+const DAILY_TIDES_TXT_FILE = "bivalve_daily_stats.txt";
 const TXT_PATH_CANDIDATES = [
   `data/${DAILY_TIDES_TXT_FILE}`,
   `./data/${DAILY_TIDES_TXT_FILE}`,
@@ -3089,7 +3089,7 @@ async function updateTimeseries(){
 JSON-BACKED HISTORY (NAVD88 PEAKS)
 ========================= */
 
-const PEAKS_JSON_FILE = "peaks_navd88.json";
+const PEAKS_JSON_FILE = "bivalve_peaks_navd88.json";
 const PEAKS_JSON_PATH_CANDIDATES = [
   `data/${PEAKS_JSON_FILE}`,
   `./data/${PEAKS_JSON_FILE}`,
@@ -3292,7 +3292,7 @@ const hist = await Promise.allSettled([
 
 if (hist[0].status === "rejected") {
   console.error("History init failed:", hist[0].reason);
-  if (histMeta)      histMeta.textContent = "History load failed. Check /data/peaks_navd88.json.";
+  if (histMeta)      histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json.";
   if (monthAvgMeta)  monthAvgMeta.textContent = "History load failed (monthly averages unavailable).";
 }
 
