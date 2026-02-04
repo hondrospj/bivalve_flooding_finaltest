@@ -1,3 +1,4 @@
+
 #!/usr/bin/env node
 /**
  * Crest-anchored NAVD88 "high tide events" builder for USGS 01412150 (param 72279)
@@ -6,16 +7,16 @@
  *    - Search observed USGS IV points within ±2 hours and take the MAX
  *    - BUT: if there are ZERO observed points within ±1 hour of the crest, SKIP that crest entirely
  *
- * Writes to: data/peaks_navd88.json
+ * Writes to: data/bivalve_peaks_navd88.json
  *
  * Modes:
- *   node tools/update_peaks_navd88.js
+ *   node tools/update_bivalve_peaks_navd88.js
  *     -> incremental update from lastProcessedISO (with buffer) to now
  *
- *   node tools/update_peaks_navd88.js --backfill-year=2000
+ *   node tools/update_bivalve_peaks_navd88.js --backfill-year=2000
  *     -> backfill exactly that calendar year (UTC)
  *
- *   node tools/update_peaks_navd88.js --backfill-from=2000 --backfill-to=2026
+ *   node tools/update_bivalve_peaks_navd88.js --backfill-from=2000 --backfill-to=2026
  *     -> backfill inclusive year range (UTC)
  */
 
@@ -25,7 +26,7 @@ const path = require("path");
 // -------------------------
 // Config (matches your dashboard)
 // -------------------------
-const CACHE_PATH = path.join(__dirname, "..", "data", "peaks_navd88.json");
+const CACHE_PATH = path.join(__dirname, "..", "data", "bivalve_peaks_navd88.json");
 
 const SITE = "01412150";
 const PARAM = "72279";
@@ -134,7 +135,7 @@ async function fetchUSGSIV({ startISO, endISO }) {
       agencyCd: "USGS"
     }).toString();
 
-  const res = await fetch(url, { headers: { "User-Agent": "peaks-cache/2.0" } });
+  const res = await fetch(url, { headers: { "User-Agent": "bivalve-peaks-cache/2.0" } });
   if (!res.ok) throw new Error(`USGS IV fetch failed: ${res.status} ${res.statusText}`);
   const j = await res.json();
 
@@ -172,7 +173,7 @@ async function fetchNOAAHiloPredictionsHighs({ startISO, endISO }) {
       "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?" +
       new URLSearchParams({
         product: "predictions",
-        application: "peaks-cache",
+        application: "bivalve-peaks-cache",
         format: "json",
         station: NOAA_STATION,
         time_zone: "gmt",
@@ -183,7 +184,7 @@ async function fetchNOAAHiloPredictionsHighs({ startISO, endISO }) {
         end_date: yyyymmddUTC(actualEnd)
       }).toString();
 
-    const res = await fetch(url, { headers: { "User-Agent": "peaks-cache/2.0" } });
+    const res = await fetch(url, { headers: { "User-Agent": "bivalve-peaks-cache/2.0" } });
     if (!res.ok) throw new Error(`NOAA predictions fetch failed: ${res.status} ${res.statusText}`);
 
     const j = await res.json();
@@ -279,7 +280,7 @@ async function main() {
   const THRESH_NAVD88 = cache?.thresholdsNAVD88 || null;
   if (!THRESH_NAVD88) {
     die(
-      "Missing NAVD88 thresholds. Add thresholdsNAVD88 to data/peaks_navd88.json, e.g.\n" +
+      "Missing NAVD88 thresholds. Add thresholdsNAVD88 to data/bivalve_peaks_navd88.json, e.g.\n" +
       '  "thresholdsNAVD88": {"minorLow": 4.19, "moderateLow": 5.19, "majorLow": 6.19}\n'
     );
   }
