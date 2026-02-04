@@ -1,23 +1,24 @@
 
-name: Update PETSS Forecast
+name: Update Bivalve Peaks Cache
 
 on:
   workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "Optional: backfill from year (e.g., 2000)"
+        required: false
+      backfill_to:
+        description: "Optional: backfill to year (e.g., 2026)"
+        required: false
   schedule:
-    # Every 3 hours (UTC)
-    - cron: "15 */3 * * *"
+    - cron: "*/30 * * * *"  # every 30 minutes
 
 permissions:
   contents: write
 
-concurrency:
-  group: update-petss-forecast
-  cancel-in-progress: true
-
 jobs:
-  update-petss:
+  update:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,33 +28,22 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Run PETSS forecast updater
-        env:
-          PETSS_STID: "8536889"   # <-- your station
-          PETSS_DATUM: "MLLW"     # metadata only
+      - name: Run updater
         run: |
-          set -euo pipefail
-          echo "Running PETSS forecast script…"
-          echo "STID=$PETSS_STID"
-          echo "DATUM=$PETSS_DATUM"
-          node -v
-          pwd
-          node tools/update_petss_forecast.js
+          if [ -n "${{ inputs.backfill_from }}" ] && [ -n "${{ inputs.backfill_to }}" ]; then
+            node tools/update_bivalve_peaks_navd88.js --backfill-from=${{ inputs.backfill_from }} --backfill-to=${{ inputs.backfill_to }}
+          else
+            node tools/update_bivalve_peaks_navd88.js
+          fi
 
       - name: Commit & push if changed
         run: |
-          set -euo pipefail
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Commit only the forecast products (+ debug header snapshot, optional)
-          git add data/petss_forecast.csv data/petss_forecast.json data/petss_meta.json data/petss_station_debug.txt || true
-
+          git add data/bivalve_peaks_navd88.json
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No changes."
             exit 0
           fi
-
-          git commit -m "Update PETSS forecast"
+          git commit -m "Update peaks cache"
           git push
