@@ -3090,7 +3090,7 @@ async function updateTimeseries(){
 JSON-BACKED HISTORY (NAVD88 PEAKS)
 ========================= */
 
-const PEAKS_JSON_FILE = "bivalve_peaks_navd88.json";
+const PEAKS_JSON_FILE = "peaks_navd88.json";
 const PEAKS_JSON_PATH_CANDIDATES = [
   `data/${PEAKS_JSON_FILE}`,
   `./data/${PEAKS_JSON_FILE}`,
@@ -3293,7 +3293,7 @@ const hist = await Promise.allSettled([
 
 if (hist[0].status === "rejected") {
   console.error("History init failed:", hist[0].reason);
-  if (histMeta)      histMeta.textContent = "History load failed. Check /data/bivalve_peaks_navd88.json.";
+  if (histMeta)      histMeta.textContent = "History load failed. Check /data/peaks_navd88.json.";
   if (monthAvgMeta)  monthAvgMeta.textContent = "History load failed (monthly averages unavailable).";
 }
 
