@@ -1,4 +1,3 @@
-
 #!/usr/bin/env node
 /**
  * Update PETSS forecast (ensemble mean) from NOMADS PETSS production tarballs.
