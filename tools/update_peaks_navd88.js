@@ -9,13 +9,13 @@
  * Writes to: data/peaks_navd88.json
  *
  * Modes:
- *   node tools/peaks_navd88.js
+ *   node tools/update_peaks_navd88.js
  *     -> incremental update from lastProcessedISO (with buffer) to now
  *
- *   node tools/peaks_navd88.js --backfill-year=2000
+ *   node tools/update_peaks_navd88.js --backfill-year=2000
  *     -> backfill exactly that calendar year (UTC)
  *
- *   node tools/peaks_navd88.js --backfill-from=2000 --backfill-to=2026
+ *   node tools/update_peaks_navd88.js --backfill-from=2000 --backfill-to=2026
  *     -> backfill inclusive year range (UTC)
  */
 
