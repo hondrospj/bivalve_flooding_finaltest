@@ -1,1 +1,15 @@
 
+{
+  "site": "01412150",
+  "parameterCd": "72279",
+  "datum": "NAVD88",
+  "peakMinSepMinutes": 300,
+  "thresholdsNAVD88": {
+    "minorLow": 4.19,
+    "moderateLow": 5.19,
+    "majorLow": 6.19
+  },
+  "method": "crest_anchored_highs_v1",
+  "lastProcessedISO": "2000-01-01T00:00:00Z",
+  "events": []
+}
